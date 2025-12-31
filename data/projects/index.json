@@ -1,0 +1,15 @@
+{
+  "projects": [
+    {
+      "id": "proj_648e0127",
+      "name": "Lost Alien: Planet of Isolation",
+      "updatedAt": 1767150063748
+    },
+    {
+      "id": "proj_72784cf3",
+      "name": "Test Project",
+      "updatedAt": 1767137767463
+    }
+  ],
+  "activeProjectId": "proj_648e0127"
+}

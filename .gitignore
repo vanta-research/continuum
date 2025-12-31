@@ -32,6 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
+
+# logs
+*.log
+
+# electron build
+/dist/
+
+# user data (keep structure, ignore content)
+/data/memory/*.json
+/data/projects/proj_*
 
 # vercel
 .vercel
