@@ -385,12 +385,19 @@ export function applyPendingEdit(
   targetLine: number,
   newContent: string,
 ): string {
+  // Special case: if targetLine is 1, replace the entire document
+  // This is the common case for AI edits where the model outputs a full document replacement
+  if (targetLine === 1) {
+    return newContent;
+  }
+
   const lines = documentContent.split("\n");
   const newContentLines = newContent.split("\n");
 
   // Validate target line
   if (targetLine < 1) {
     targetLine = 1;
+    return newContent; // Full replacement
   }
 
   // If target line is beyond the document, append
@@ -413,6 +420,12 @@ export function extractOriginalContent(
   targetLine: number,
   newContentLineCount: number,
 ): string {
+  // Special case: if targetLine is 1, return the entire document
+  // This is the common case for AI edits where the model outputs a full document replacement
+  if (targetLine === 1) {
+    return documentContent;
+  }
+
   const lines = documentContent.split("\n");
 
   if (targetLine < 1 || targetLine > lines.length) {

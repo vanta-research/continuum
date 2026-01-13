@@ -554,6 +554,23 @@ function ChatInterfaceInner() {
               if (content) {
                 fullResponse += content;
 
+                // Debug: log when we see CANVAS_EDIT markers being streamed
+                if (content.includes("[CANVAS_EDIT_START")) {
+                  console.log(
+                    "[Loom Debug] CANVAS_EDIT_START received in stream chunk",
+                  );
+                }
+                if (content.includes("[CANVAS_EDIT_END]")) {
+                  console.log(
+                    "[Loom Debug] CANVAS_EDIT_END received in stream chunk",
+                  );
+                }
+                if (content.includes("[ADD_FILE]")) {
+                  console.log(
+                    "[Loom Debug] WARNING: Raw ADD_FILE marker in stream - conversion may have failed",
+                  );
+                }
+
                 // Update chat with cleaned content (all tool markers stripped out)
                 const displayContent = cleanAllToolMarkers(fullResponse);
 
@@ -602,12 +619,24 @@ function ChatInterfaceInner() {
         fullResponse.substring(0, 500),
       );
       console.log(
+        "[Loom Debug] fullResponse end:",
+        fullResponse.substring(Math.max(0, fullResponse.length - 200)),
+      );
+      console.log(
         "[Loom Debug] Contains CANVAS_EDIT_START:",
         fullResponse.includes("[CANVAS_EDIT_START"),
       );
       console.log(
         "[Loom Debug] Contains CANVAS_EDIT_END:",
         fullResponse.includes("[CANVAS_EDIT_END]"),
+      );
+      console.log(
+        "[Loom Debug] Contains raw ADD_FILE:",
+        fullResponse.includes("[ADD_FILE]"),
+      );
+      console.log(
+        "[Loom Debug] Contains raw /ADD_FILE:",
+        fullResponse.includes("[/ADD_FILE]"),
       );
 
       if (isLoomStillActive) {
@@ -634,6 +663,17 @@ function ChatInterfaceInner() {
           const targetLine = parseInt(editMatch[1], 10);
           const editContent = editMatch[2].trim();
           const currentDocContent = currentLoom.state.document?.content || "";
+
+          console.log("[Loom Debug] Processing edit:");
+          console.log("[Loom Debug] - targetLine:", targetLine);
+          console.log(
+            "[Loom Debug] - editContent preview:",
+            editContent.substring(0, 200),
+          );
+          console.log(
+            "[Loom Debug] - currentDocContent length:",
+            currentDocContent.length,
+          );
 
           // Check if auto-accept is enabled (use current state, not stale)
           if (currentLoom.state.autoAcceptEdits) {

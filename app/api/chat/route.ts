@@ -271,37 +271,36 @@ function buildLoomInstructions(loomContext: LoomContext): string {
   return `
 
 ## LOOM MODE ACTIVE - DOCUMENT EDITOR
-The user has a document editor called "Loom" open. You can write to it using the standard [ADD_FILE] format.
+The user has a document editor called "Loom" open. You can write to it using [ADD_FILE] markers.
 
 ### HOW TO WRITE TO THE LOOM:
-Use the normal [ADD_FILE] markers - they will automatically write to the Loom document instead of creating a project file.
+When editing the Loom, you must output the COMPLETE new version of the document.
+The system will automatically show a diff of what changed.
 
 [ADD_FILE]
 {
-  "content": "Your content here with \\n for newlines"
+  "content": "THE COMPLETE DOCUMENT CONTENT HERE"
 }
 [/ADD_FILE]
 
-The "name" field is ignored when Loom is active.
+**IMPORTANT**: Always include the ENTIRE document in your response, not just the new parts.
+- If adding to a document: include existing content + new content
+- If editing a document: include the full updated document
+- If replacing a document: include the complete new document
 
 ### WHEN TO EDIT THE LOOM:
 Only when the user explicitly asks you to write, edit, add to, or modify the document.
 
 ### WHEN TO RESPOND IN CHAT INSTEAD:
-- User asks questions about the document ("what is this?", "explain this", "summarize this")
+- User asks questions about the document ("what is this?", "explain this")
 - User asks for your opinion or analysis
 - User hasn't explicitly requested changes
 
 ### CURRENT DOCUMENT STATE:
-${isEmpty ? "(The document is currently empty)" : `Document has ${loomContext.lineCount} lines:`}
-${
-  isEmpty
-    ? ""
-    : `---
-${loomContext.content}
----`
-}
+${isEmpty ? "(The document is currently empty)" : `The document currently contains:\n---\n${loomContext.content}\n---`}
 ${loomContext.selectedText ? `\nUser has selected: "${loomContext.selectedText}"` : ""}
+
+${!isEmpty ? `When the user asks to ADD content, include the existing content above PLUS the new content in your response.` : ""}
 `;
 }
 
@@ -461,6 +460,130 @@ async function streamLlamaResponse(prompt: string) {
   return response.body;
 }
 
+/**
+ * Converts ADD_FILE markers to CANVAS_EDIT markers on-the-fly for Loom mode.
+ * This allows models to use their natural ADD_FILE format while the client receives CANVAS_EDIT format.
+ *
+ * The conversion buffers content between [ADD_FILE] and [/ADD_FILE], extracts the JSON "content" field,
+ * and emits it wrapped in [CANVAS_EDIT_START:1]...[CANVAS_EDIT_END] markers.
+ */
+function convertAddFileToCanvasEdit(
+  chunk: string,
+  inAddFile: boolean,
+  addFileBuffer: string,
+): {
+  content: string;
+  inAddFile: boolean;
+  addFileBuffer: string;
+} {
+  let newInAddFile = inAddFile;
+  let newBuffer = addFileBuffer + chunk; // Always append chunk to buffer first
+  let output = "";
+
+  // Process the buffer looking for markers
+  while (true) {
+    if (!newInAddFile) {
+      // Looking for [ADD_FILE] start marker
+      const startIndex = newBuffer.indexOf("[ADD_FILE]");
+      if (startIndex === -1) {
+        // No start marker found - emit everything in buffer (it's safe text)
+        output += newBuffer;
+        newBuffer = "";
+        break;
+      }
+
+      // Found start marker - emit text before it, then the converted marker
+      output += newBuffer.slice(0, startIndex);
+      output += "[CANVAS_EDIT_START:1]";
+      newBuffer = newBuffer.slice(startIndex + "[ADD_FILE]".length);
+      newInAddFile = true;
+      console.log("[Loom Conversion] ADD_FILE start detected");
+    }
+
+    if (newInAddFile) {
+      // Looking for [/ADD_FILE] end marker
+      const endIndex = newBuffer.indexOf("[/ADD_FILE]");
+      if (endIndex === -1) {
+        // No end marker yet - keep buffering (don't emit partial JSON)
+        break;
+      }
+
+      // Found end marker - extract and convert the content
+      const jsonContent = newBuffer.slice(0, endIndex);
+      const afterEnd = newBuffer.slice(endIndex + "[/ADD_FILE]".length);
+
+      console.log(
+        "[Loom Conversion] ADD_FILE end detected, JSON length:",
+        jsonContent.length,
+      );
+
+      // Extract the "content" field from the JSON
+      let extractedContent = "";
+      try {
+        // Try to parse as JSON first
+        const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.content) {
+            extractedContent = parsed.content;
+            console.log(
+              "[Loom Conversion] Successfully parsed JSON, content length:",
+              extractedContent.length,
+            );
+          }
+        }
+      } catch (e) {
+        // JSON parsing failed, try regex extraction
+        console.log("[Loom Conversion] JSON parse failed, trying regex");
+      }
+
+      // Fallback: regex extraction for malformed JSON
+      if (!extractedContent) {
+        const contentMatch = jsonContent.match(
+          /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+        );
+        if (contentMatch) {
+          extractedContent = contentMatch[1]
+            .replace(/\\n/g, "\n")
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, "\\")
+            .replace(/\\t/g, "\t");
+          console.log(
+            "[Loom Conversion] Regex extracted content, length:",
+            extractedContent.length,
+          );
+        }
+      }
+
+      // Emit the extracted content (or empty if extraction failed)
+      if (extractedContent) {
+        output += extractedContent;
+        console.log(
+          "[Loom Conversion] Successfully converted ADD_FILE to CANVAS_EDIT",
+        );
+      } else {
+        console.log(
+          "[Loom Conversion] Failed to extract content, buffer preview:",
+          jsonContent.substring(0, 200),
+        );
+      }
+
+      output += "[CANVAS_EDIT_END]";
+      newBuffer = afterEnd;
+      newInAddFile = false;
+      console.log("[Loom Conversion] Conversion complete, state reset");
+
+      // Continue loop to check for more ADD_FILE blocks in remaining buffer
+    }
+  }
+
+  return {
+    content: output,
+    inAddFile: newInAddFile,
+    addFileBuffer: newBuffer,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -480,118 +603,6 @@ export async function POST(request: NextRequest) {
         { error: "Message is required" },
         { status: 400 },
       );
-    }
-
-    /**
-     * Converts ADD_FILE markers to CANVAS_EDIT markers on-the-fly for Loom mode.
-     * This allows models to use their natural ADD_FILE format while the client receives CANVAS_EDIT format.
-     */
-    function convertAddFileToCanvasEdit(
-      chunk: string,
-      inAddFile: boolean,
-      addFileBuffer: string,
-    ): {
-      content: string;
-      inAddFile: boolean;
-      addFileBuffer: string;
-    } {
-      let result = chunk;
-      let newInAddFile = inAddFile;
-      let newBuffer = addFileBuffer;
-
-      // Check for ADD_FILE start marker
-      if (!inAddFile) {
-        const startIndex = result.indexOf("[ADD_FILE]");
-        if (startIndex !== -1) {
-          // Mark that we're inside an ADD_FILE block
-          newInAddFile = true;
-          console.log("[Loom Conversion] ADD_FILE start detected");
-          // Emit content before the marker and CANVAS_EDIT_START
-          const beforeMarker = result.slice(0, startIndex);
-          const afterMarker = result.slice(startIndex + "[ADD_FILE]".length);
-          result = beforeMarker + "[CANVAS_EDIT_START:1]";
-          // Start buffering content after [ADD_FILE]
-          newBuffer = afterMarker;
-        }
-      }
-
-      // If we're inside an ADD_FILE block, process the content
-      if (newInAddFile) {
-        const endIndex = result.indexOf("[/ADD_FILE]");
-
-        if (endIndex !== -1) {
-          // Found the end marker - extract and convert the buffered content
-          newBuffer += result.slice(0, endIndex);
-          const afterEnd = result.slice(endIndex + "[/ADD_FILE]".length);
-          console.log(
-            "[Loom Conversion] ADD_FILE end detected, buffered content length:",
-            newBuffer.length,
-          );
-
-          // Extract content field from JSON
-          let extractedContent = "";
-          try {
-            // Try to extract the "content" value from JSON
-            // Handle various whitespace and quote styles, including escaped newlines
-            const contentMatch = newBuffer.match(
-              /"content"\s*:\s*"((?:[\s\S]|\\.)*)"/,
-            );
-            if (contentMatch) {
-              extractedContent = contentMatch[1]
-                .replace(/\\n/g, "\n")
-                .replace(/\\"/g, '"')
-                .replace(/\\\\/g, "\\");
-              console.log(
-                "[Loom Conversion] Successfully extracted content, length:",
-                extractedContent.length,
-              );
-            } else {
-              console.log(
-                "[Loom Conversion] Failed to match content regex, buffer preview:",
-                newBuffer.substring(0, 200),
-              );
-            }
-          } catch (e) {
-            console.error("Error extracting content from ADD_FILE:", e);
-          }
-
-          // Build the converted result
-          if (extractedContent) {
-            result = extractedContent + "[CANVAS_EDIT_END]" + afterEnd;
-            console.log(
-              "[Loom Conversion] Successfully converted ADD_FILE to CANVAS_EDIT",
-            );
-          } else {
-            // If we couldn't extract content, try to clean up the JSON and use as-is
-            // Remove outer braces and any JSON formatting
-            const cleaned = newBuffer
-              .replace(/^\s*\{?\s*/, "")
-              .replace(/\s*\}?\s*$/, "")
-              .replace(/,\s*$/, "");
-            result = cleaned + "[CANVAS_EDIT_END]" + afterEnd;
-            console.log(
-              "[Loom Conversion] Using fallback cleaned content, length:",
-              cleaned.length,
-            );
-          }
-
-          // Reset state
-          newInAddFile = false;
-          newBuffer = "";
-          console.log("[Loom Conversion] Conversion complete, state reset");
-        } else {
-          // Still inside the block, buffer the content
-          newBuffer += result;
-          // Don't send partial JSON to the client yet
-          result = "";
-        }
-      }
-
-      return {
-        content: result,
-        inAddFile: newInAddFile,
-        addFileBuffer: newBuffer,
-      };
     }
 
     // Validate and sanitize history - filter out empty assistant messages (Mistral requires content)
