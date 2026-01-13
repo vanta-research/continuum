@@ -519,6 +519,14 @@ function ChatInterfaceInner() {
 
     try {
       // Build loom context if loom mode is active
+      console.log("[Loom Debug] Building loom payload:");
+      console.log("[Loom Debug] - isLoomMode:", loom.state.isLoomMode);
+      console.log("[Loom Debug] - document exists:", !!loom.state.document);
+      console.log(
+        "[Loom Debug] - document content length:",
+        loom.state.document?.content?.length,
+      );
+
       const loomPayload =
         loom.state.isLoomMode && loom.state.document
           ? {
@@ -530,6 +538,15 @@ function ChatInterfaceInner() {
               },
             }
           : { loomEnabled: false };
+
+      console.log("[Loom Debug] Final loomPayload:", {
+        loomEnabled: loomPayload.loomEnabled,
+        hasContext: "loomContext" in loomPayload,
+        contextContentLength:
+          "loomContext" in loomPayload
+            ? loomPayload.loomContext?.content?.length
+            : 0,
+      });
 
       const response = await fetch("/api/chat", {
         method: "POST",

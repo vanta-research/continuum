@@ -20,6 +20,8 @@ import { applyPendingEdit } from "@/lib/diff-utils";
 
 const PANE_WIDTH_STORAGE_KEY = "loom-pane-width";
 const AUTO_ACCEPT_STORAGE_KEY = "loom-auto-accept-edits";
+const LOOM_MODE_STORAGE_KEY = "loom-mode-enabled";
+const LOOM_DOCUMENT_STORAGE_KEY = "loom-document-content";
 const DEFAULT_PANE_WIDTH = 50;
 
 const initialState: LoomState = {
@@ -392,7 +394,7 @@ const LoomContext = createContext<LoomContextValue | null>(null);
 export function LoomProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(loomReducer, initialState);
 
-  // Load pane width from localStorage on mount
+  // Load persisted state from localStorage on mount
   useEffect(() => {
     const savedWidth = localStorage.getItem(PANE_WIDTH_STORAGE_KEY);
     if (savedWidth) {
@@ -406,7 +408,70 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
         payload: savedAutoAccept === "true",
       });
     }
+
+    const savedLoomMode = localStorage.getItem(LOOM_MODE_STORAGE_KEY);
+    if (savedLoomMode === "true") {
+      dispatch({ type: "SET_LOOM_MODE", payload: true });
+    }
+
+    // Restore document content if it was saved
+    const savedDocument = localStorage.getItem(LOOM_DOCUMENT_STORAGE_KEY);
+    if (savedDocument) {
+      try {
+        const docData = JSON.parse(savedDocument);
+        if (docData.content) {
+          console.log(
+            "[LoomProvider] Restoring saved document, content length:",
+            docData.content.length,
+          );
+          dispatch({
+            type: "SET_DOCUMENT",
+            payload: {
+              id: docData.id || `doc-${Date.now()}`,
+              title: docData.title || "Untitled Document",
+              content: docData.content,
+              createdAt: new Date(docData.createdAt || Date.now()),
+              updatedAt: new Date(docData.updatedAt || Date.now()),
+              lastModifiedBy: docData.lastModifiedBy || "user",
+            },
+          });
+        }
+      } catch (e) {
+        console.error("[LoomProvider] Failed to restore document:", e);
+      }
+    }
   }, []);
+
+  // Auto-create document when Loom mode is enabled but no document exists
+  useEffect(() => {
+    if (state.isLoomMode && !state.document) {
+      console.log(
+        "[LoomProvider] Loom mode enabled but no document, auto-creating",
+      );
+      dispatch({
+        type: "CREATE_DOCUMENT",
+        payload: { sessionId: "auto", title: "Untitled Document" },
+      });
+    }
+  }, [state.isLoomMode, state.document]);
+
+  // Save document content to localStorage when it changes
+  useEffect(() => {
+    if (state.document) {
+      const docData = {
+        id: state.document.id,
+        title: state.document.title,
+        content: state.document.content,
+        createdAt: state.document.createdAt,
+        updatedAt: state.document.updatedAt,
+        lastModifiedBy: state.document.lastModifiedBy,
+      };
+      localStorage.setItem(LOOM_DOCUMENT_STORAGE_KEY, JSON.stringify(docData));
+    } else {
+      // Clear saved document when document is removed
+      localStorage.removeItem(LOOM_DOCUMENT_STORAGE_KEY);
+    }
+  }, [state.document]);
 
   // Save pane width to localStorage when it changes
   useEffect(() => {
@@ -420,6 +485,11 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
       state.autoAcceptEdits.toString(),
     );
   }, [state.autoAcceptEdits]);
+
+  // Save loom mode preference to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(LOOM_MODE_STORAGE_KEY, state.isLoomMode.toString());
+  }, [state.isLoomMode]);
 
   // Convenience methods
   const toggleLoomMode = useCallback(() => {
