@@ -73,7 +73,24 @@ function loomReducer(state: LoomState, action: LoomAction): LoomState {
     }
 
     case "UPDATE_CONTENT":
-      if (!state.document) return state;
+      console.log("[LoomProvider] UPDATE_CONTENT action received");
+      console.log("[LoomProvider] - payload length:", action.payload?.length);
+      console.log(
+        "[LoomProvider] - payload preview:",
+        action.payload?.substring(0, 200),
+      );
+      console.log("[LoomProvider] - document exists:", !!state.document);
+      if (!state.document) {
+        console.log("[LoomProvider] No document, returning unchanged state");
+        return state;
+      }
+      console.log(
+        "[LoomProvider] Updating document content from",
+        state.document.content.length,
+        "to",
+        action.payload?.length,
+        "chars",
+      );
       return {
         ...state,
         document: {
@@ -222,6 +239,21 @@ function loomReducer(state: LoomState, action: LoomAction): LoomState {
 
     // Pending edit actions
     case "ADD_PENDING_EDIT": {
+      console.log("[LoomProvider] ADD_PENDING_EDIT action received");
+      console.log("[LoomProvider] - targetLine:", action.payload.targetLine);
+      console.log(
+        "[LoomProvider] - originalContent length:",
+        action.payload.originalContent?.length,
+      );
+      console.log(
+        "[LoomProvider] - newContent length:",
+        action.payload.newContent?.length,
+      );
+      console.log(
+        "[LoomProvider] - current pendingEdits count:",
+        state.pendingEdits.length,
+      );
+
       const newPendingEdit: PendingEdit = {
         id: `edit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         targetLine: action.payload.targetLine,
@@ -230,6 +262,15 @@ function loomReducer(state: LoomState, action: LoomAction): LoomState {
         timestamp: new Date(),
         status: "pending",
       };
+      console.log(
+        "[LoomProvider] Created pending edit with id:",
+        newPendingEdit.id,
+      );
+      console.log(
+        "[LoomProvider] New pendingEdits count will be:",
+        state.pendingEdits.length + 1,
+      );
+
       return {
         ...state,
         pendingEdits: [...state.pendingEdits, newPendingEdit],

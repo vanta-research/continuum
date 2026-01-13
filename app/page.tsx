@@ -65,6 +65,73 @@ import type {
   StoredLoomDocument,
 } from "@/lib/project-types";
 
+/**
+ * Convert ADD_FILE markers to CANVAS_EDIT markers on the client side.
+ * This is a fallback in case server-side conversion fails or doesn't run.
+ */
+function convertAddFileToCanvasEdit(response: string): string {
+  // Check if we have ADD_FILE markers that weren't converted
+  const addFileMatch = response.match(
+    /\[ADD_FILE\]\s*([\s\S]*?)\s*\[\/ADD_FILE\]/,
+  );
+
+  if (!addFileMatch) {
+    return response; // No ADD_FILE markers, return as-is
+  }
+
+  console.log(
+    "[Loom Client] Found ADD_FILE markers, converting to CANVAS_EDIT",
+  );
+
+  try {
+    // Try to parse the JSON and extract content
+    const jsonStr = addFileMatch[1].trim();
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.content) {
+        // Replace ADD_FILE block with CANVAS_EDIT block
+        const converted = response.replace(
+          /\[ADD_FILE\]\s*[\s\S]*?\s*\[\/ADD_FILE\]/,
+          `[CANVAS_EDIT_START:1]${parsed.content}[CANVAS_EDIT_END]`,
+        );
+        console.log(
+          "[Loom Client] Successfully converted ADD_FILE to CANVAS_EDIT",
+        );
+        return converted;
+      }
+    }
+  } catch (e) {
+    console.error("[Loom Client] Failed to parse ADD_FILE JSON:", e);
+  }
+
+  // Fallback: try regex extraction
+  try {
+    const contentMatch = addFileMatch[1].match(
+      /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+    );
+    if (contentMatch) {
+      const extractedContent = contentMatch[1]
+        .replace(/\\n/g, "\n")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+        .replace(/\\t/g, "\t");
+
+      const converted = response.replace(
+        /\[ADD_FILE\]\s*[\s\S]*?\s*\[\/ADD_FILE\]/,
+        `[CANVAS_EDIT_START:1]${extractedContent}[CANVAS_EDIT_END]`,
+      );
+      console.log("[Loom Client] Converted ADD_FILE using regex fallback");
+      return converted;
+    }
+  } catch (e) {
+    console.error("[Loom Client] Regex fallback failed:", e);
+  }
+
+  return response; // Return unchanged if all conversion attempts fail
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -639,7 +706,27 @@ function ChatInterfaceInner() {
         fullResponse.includes("[/ADD_FILE]"),
       );
 
+      // Client-side fallback: convert ADD_FILE to CANVAS_EDIT if server didn't
+      if (isLoomStillActive && fullResponse.includes("[ADD_FILE]")) {
+        console.log("[Loom Debug] Running client-side ADD_FILE conversion");
+        fullResponse = convertAddFileToCanvasEdit(fullResponse);
+        console.log(
+          "[Loom Debug] After conversion - Contains CANVAS_EDIT_START:",
+          fullResponse.includes("[CANVAS_EDIT_START"),
+        );
+      }
+
       if (isLoomStillActive) {
+        // Debug: log the full response before attempting to match
+        console.log(
+          "[Loom Debug] Full response for regex match (first 1000 chars):",
+          fullResponse.substring(0, 1000),
+        );
+        console.log(
+          "[Loom Debug] Full response for regex match (last 500 chars):",
+          fullResponse.substring(Math.max(0, fullResponse.length - 500)),
+        );
+
         // More flexible regex that handles markdown formatting around the markers
         // The model sometimes wraps markers with --- or other markdown
         const editMatch = fullResponse.match(
@@ -647,6 +734,24 @@ function ChatInterfaceInner() {
         );
 
         console.log("[Loom Debug] editMatch found:", !!editMatch);
+        if (!editMatch) {
+          console.log("[Loom Debug] NO MATCH! Trying alternative patterns...");
+          // Try to find any CANVAS_EDIT markers at all
+          const hasStart = fullResponse.indexOf("[CANVAS_EDIT_START");
+          const hasEnd = fullResponse.indexOf("[CANVAS_EDIT_END]");
+          console.log(
+            "[Loom Debug] Start marker index:",
+            hasStart,
+            "End marker index:",
+            hasEnd,
+          );
+          if (hasStart !== -1 && hasEnd !== -1) {
+            console.log(
+              "[Loom Debug] Content between markers:",
+              fullResponse.substring(hasStart, hasEnd + 20),
+            );
+          }
+        }
         if (editMatch) {
           console.log("[Loom Debug] Target line:", editMatch[1]);
           console.log(
@@ -678,12 +783,24 @@ function ChatInterfaceInner() {
           // Check if auto-accept is enabled (use current state, not stale)
           if (currentLoom.state.autoAcceptEdits) {
             // Apply edit directly to loom (existing behavior)
+            console.log(
+              "[Loom Debug] Auto-accept is ON, applying edit directly",
+            );
             const newContent = applyEditToDocument(
               currentDocContent,
               targetLine,
               editContent,
             );
+            console.log(
+              "[Loom Debug] New content length after apply:",
+              newContent.length,
+            );
+            console.log(
+              "[Loom Debug] New content preview:",
+              newContent.substring(0, 200),
+            );
             currentLoom.updateContent(newContent);
+            console.log("[Loom Debug] Content updated in Loom");
 
             // Final cleanup of chat message
             const cleanedMessage = cleanLoomMarkers(fullResponse);
@@ -708,6 +825,9 @@ function ChatInterfaceInner() {
             });
           } else {
             // Queue the edit for review (new diff-based workflow)
+            console.log(
+              "[Loom Debug] Auto-accept is OFF, queuing edit for review",
+            );
             const editContentLines = editContent.split("\n").length;
             const originalContent = extractOriginalContent(
               currentDocContent,
@@ -715,11 +835,27 @@ function ChatInterfaceInner() {
               editContentLines,
             );
 
+            console.log("[Loom Debug] Creating pending edit:");
+            console.log("[Loom Debug] - editContentLines:", editContentLines);
+            console.log(
+              "[Loom Debug] - originalContent length:",
+              originalContent.length,
+            );
+            console.log(
+              "[Loom Debug] - originalContent preview:",
+              originalContent.substring(0, 100),
+            );
+
             // Add to pending edits queue
             currentLoom.addPendingEdit(
               targetLine,
               originalContent,
               editContent,
+            );
+            console.log("[Loom Debug] Pending edit added to queue");
+            console.log(
+              "[Loom Debug] Current pending edits count:",
+              currentLoom.state.pendingEdits.length + 1,
             );
 
             // Update chat message to indicate pending review

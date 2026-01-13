@@ -3,6 +3,7 @@
 import React, {
   useState,
   useMemo,
+  useEffect,
   Component,
   ErrorInfo,
   ReactNode,
@@ -87,9 +88,29 @@ export function PendingEditReview({ className }: PendingEditReviewProps) {
 
   const { pendingEdits } = state;
 
+  // Debug logging
+  useEffect(() => {
+    console.log(
+      "[PendingEditReview] Rendering with",
+      pendingEdits.length,
+      "pending edits",
+    );
+    if (pendingEdits.length > 0) {
+      console.log("[PendingEditReview] First pending edit:", {
+        id: pendingEdits[0].id,
+        targetLine: pendingEdits[0].targetLine,
+        originalContentLength: pendingEdits[0].originalContent?.length,
+        newContentLength: pendingEdits[0].newContent?.length,
+      });
+    }
+  }, [pendingEdits]);
+
   if (pendingEdits.length === 0) {
+    console.log("[PendingEditReview] No pending edits, returning null");
     return null;
   }
+
+  console.log("[PendingEditReview] Rendering edit review panel");
 
   return (
     <div

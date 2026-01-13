@@ -480,6 +480,24 @@ function convertAddFileToCanvasEdit(
   let newBuffer = addFileBuffer + chunk; // Always append chunk to buffer first
   let output = "";
 
+  // Debug: log every chunk processed
+  if (chunk.length > 0) {
+    console.log(
+      "[Loom Conversion] Processing chunk, length:",
+      chunk.length,
+      "inAddFile:",
+      inAddFile,
+      "bufferLength:",
+      addFileBuffer.length,
+    );
+    if (chunk.includes("[ADD_FILE]") || chunk.includes("[/ADD_FILE]")) {
+      console.log(
+        "[Loom Conversion] Chunk contains marker:",
+        chunk.substring(0, 100),
+      );
+    }
+  }
+
   // Process the buffer looking for markers
   while (true) {
     if (!newInAddFile) {
@@ -505,6 +523,10 @@ function convertAddFileToCanvasEdit(
       const endIndex = newBuffer.indexOf("[/ADD_FILE]");
       if (endIndex === -1) {
         // No end marker yet - keep buffering (don't emit partial JSON)
+        console.log(
+          "[Loom Conversion] Still buffering, waiting for end marker. Buffer length:",
+          newBuffer.length,
+        );
         break;
       }
 
@@ -574,6 +596,24 @@ function convertAddFileToCanvasEdit(
       console.log("[Loom Conversion] Conversion complete, state reset");
 
       // Continue loop to check for more ADD_FILE blocks in remaining buffer
+    }
+  }
+
+  // Debug: log what we're returning
+  if (output.length > 0 || newInAddFile !== inAddFile) {
+    console.log(
+      "[Loom Conversion] Returning - output length:",
+      output.length,
+      "newInAddFile:",
+      newInAddFile,
+      "newBuffer length:",
+      newBuffer.length,
+    );
+    if (output.includes("[CANVAS_EDIT_START")) {
+      console.log("[Loom Conversion] Output contains CANVAS_EDIT_START");
+    }
+    if (output.includes("[CANVAS_EDIT_END]")) {
+      console.log("[Loom Conversion] Output contains CANVAS_EDIT_END");
     }
   }
 
@@ -784,6 +824,14 @@ export async function POST(request: NextRequest) {
         let inAddFile = false;
         let addFileBuffer = "";
 
+        // Debug: log whether Loom conversion is active
+        console.log(
+          "[Loom Conversion] Stream starting, loomEnabled:",
+          loomEnabled,
+          "loomContext exists:",
+          !!loomContext,
+        );
+
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -797,7 +845,8 @@ export async function POST(request: NextRequest) {
 
             if (
               model === "atom-large-experimental" ||
-              model === "loux-large-experimental"
+              model === "loux-large-experimental" ||
+              model === "mistral"
             ) {
               for (const line of lines) {
                 const trimmed = line.trim();
@@ -813,6 +862,17 @@ export async function POST(request: NextRequest) {
                     const parsed = JSON.parse(data);
                     let content = parsed.choices?.[0]?.delta?.content;
                     if (content) {
+                      // Debug: log raw content chunks that contain ADD_FILE
+                      if (
+                        content.includes("[ADD_FILE]") ||
+                        content.includes("[/ADD_FILE]")
+                      ) {
+                        console.log(
+                          "[Loom Conversion] Raw chunk contains ADD_FILE marker, loomEnabled:",
+                          loomEnabled,
+                        );
+                      }
+
                       // If Loom is active, convert ADD_FILE markers to CANVAS_EDIT on-the-fly
                       if (loomEnabled && loomContext) {
                         const converted = convertAddFileToCanvasEdit(
@@ -823,6 +883,17 @@ export async function POST(request: NextRequest) {
                         content = converted.content;
                         inAddFile = converted.inAddFile;
                         addFileBuffer = converted.addFileBuffer;
+                      }
+
+                      // Debug: log what we're sending to client
+                      if (
+                        content.includes("[CANVAS_EDIT_START") ||
+                        content.includes("[CANVAS_EDIT_END]")
+                      ) {
+                        console.log(
+                          "[Loom Conversion] Sending CANVAS_EDIT marker to client:",
+                          content.substring(0, 100),
+                        );
                       }
 
                       controller.enqueue(
