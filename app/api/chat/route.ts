@@ -1,11 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
-import MemorySystem from '@/lib/memory';
-import path from 'path';
+import { NextRequest, NextResponse } from "next/server";
+import MemorySystem from "@/lib/memory";
+import path from "path";
+import fs from "fs";
 
-const LLAMA_SERVER_URL = process.env.LLAMA_SERVER_URL || 'http://localhost:8082';
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
-const MISTRAL_API_URL = process.env.MISTRAL_API_URL || 'https://api.mistral.ai/v1/chat/completions';
-const MISTRAL_MODEL_ID = process.env.MISTRAL_MODEL_ID || 'mistral-large';
+const LLAMA_SERVER_URL =
+  process.env.LLAMA_SERVER_URL || "http://localhost:8082";
+const MISTRAL_API_URL =
+  process.env.MISTRAL_API_URL || "https://api.mistral.ai/v1/chat/completions";
+const MISTRAL_MODEL_ID = process.env.MISTRAL_MODEL_ID || "mistral-large-latest";
+
+// Load settings from file to get API keys
+function loadSettings(): { mistralApiKey?: string; hfToken?: string } {
+  try {
+    const settingsPath = path.join(process.cwd(), "data", "settings.json");
+    if (fs.existsSync(settingsPath)) {
+      const data = fs.readFileSync(settingsPath, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error("Error loading settings:", error);
+  }
+  return {};
+}
+
+// Get Mistral API key from settings file or environment
+function getMistralApiKey(): string | undefined {
+  const settings = loadSettings();
+  return settings.mistralApiKey || process.env.MISTRAL_API_KEY;
+}
 
 interface CompletionRequest {
   prompt: string;
@@ -17,7 +39,7 @@ interface CompletionRequest {
 interface ChatMessage {
   role: string;
   content: string;
-  type?: 'text' | 'image_url';
+  type?: "text" | "image_url";
   image_url?: { url: string };
 }
 
@@ -244,60 +266,42 @@ Done! character-outline.md has been saved to your workspace."
 }
 
 function buildLoomInstructions(loomContext: LoomContext): string {
-  const isEmpty = !loomContext.content || loomContext.content.trim() === '';
+  const isEmpty = !loomContext.content || loomContext.content.trim() === "";
 
   return `
 
-## LOOM MODE ACTIVE - COLLABORATIVE DOCUMENT EDITOR
-The user has a document editor called "Loom" open next to this chat. You can write directly to it!
-
-### WHEN TO USE THE LOOM (use it proactively!):
-- User asks you to "write", "draft", "create", or "compose" something (poem, essay, code, letter, etc.)
-- User asks you to "edit", "revise", "improve", or "fix" the document
-- User asks for content that would benefit from being in a document rather than chat
-- User mentions "the document", "the loom", or "in the editor"
-- The document is empty and the user asks for ANY content creation
+## LOOM MODE ACTIVE - DOCUMENT EDITOR
+The user has a document editor called "Loom" open. You can write to it using the standard [ADD_FILE] format.
 
 ### HOW TO WRITE TO THE LOOM:
-Use this EXACT format to write content to the document:
+Use the normal [ADD_FILE] markers - they will automatically write to the Loom document instead of creating a project file.
 
-[CANVAS_EDIT_START:1]
-Your content goes here.
-It can span multiple lines.
-[CANVAS_EDIT_END]
+[ADD_FILE]
+{
+  "content": "Your content here with \\n for newlines"
+}
+[/ADD_FILE]
 
-The number after CANVAS_EDIT_START is the line number where your edit begins (1-indexed).
+The "name" field is ignored when Loom is active.
 
-### EXAMPLES:
+### WHEN TO EDIT THE LOOM:
+Only when the user explicitly asks you to write, edit, add to, or modify the document.
 
-**User says "Write me a poem about the ocean"**
-[CANVAS_EDIT_START:1]
-The Ocean's Call
-
-Waves crash upon the sandy shore,
-A rhythm old as time before.
-The salt air whispers secrets deep,
-Of treasures that the waters keep.
-[CANVAS_EDIT_END]
-
-I've drafted a poem about the ocean in your document. Would you like me to adjust the tone or add more verses?
-
-**User says "Add a title to line 1"**
-[CANVAS_EDIT_START:1]
-# My Document Title
-[CANVAS_EDIT_END]
-
-Done! I've added the title at the top of your document.
+### WHEN TO RESPOND IN CHAT INSTEAD:
+- User asks questions about the document ("what is this?", "explain this", "summarize this")
+- User asks for your opinion or analysis
+- User hasn't explicitly requested changes
 
 ### CURRENT DOCUMENT STATE:
-${isEmpty ? '(The document is currently empty - perfect for creating new content!)' : `Document has ${loomContext.lineCount} lines:`}
-${isEmpty ? '' : `---
+${isEmpty ? "(The document is currently empty)" : `Document has ${loomContext.lineCount} lines:`}
+${
+  isEmpty
+    ? ""
+    : `---
 ${loomContext.content}
----`}
-${loomContext.selectedText ? `\nUser has selected: "${loomContext.selectedText}"` : ''}
-User's cursor is at line ${loomContext.cursorLine}.
-
-Remember: When in doubt, USE THE LOOM for any content creation request!
+---`
+}
+${loomContext.selectedText ? `\nUser has selected: "${loomContext.selectedText}"` : ""}
 `;
 }
 
@@ -330,11 +334,11 @@ function shouldUseWebSearchForMessage(message: string): boolean {
     /^makes? sense/i,
     /^that makes sense/i,
   ];
-  
-  if (noSearchPatterns.some(pattern => pattern.test(message))) {
+
+  if (noSearchPatterns.some((pattern) => pattern.test(message))) {
     return false;
   }
-  
+
   const searchPatterns = [
     /(latest|recent|new|current|202[0-9]|203[0-9])/i,
     /(news|update|development|announcement|release)/i,
@@ -352,21 +356,24 @@ function shouldUseWebSearchForMessage(message: string): boolean {
     /(review|opinion|thoughts? on)/i,
     /(best|top|recommend)/i,
   ];
-  
-  if (searchPatterns.some(pattern => pattern.test(message))) {
+
+  if (searchPatterns.some((pattern) => pattern.test(message))) {
     return true;
   }
-  
-  return message.trim().endsWith('?') && !message.includes('you');
+
+  return message.trim().endsWith("?") && !message.includes("you");
 }
 
-function buildEnhancedMessage(message: string, attachments: FileAttachment[]): string {
+function buildEnhancedMessage(
+  message: string,
+  attachments: FileAttachment[],
+): string {
   if (attachments.length === 0) return message;
 
   let enhancedMessage = message;
 
   if (attachments.length > 0) {
-    enhancedMessage += '\n\n--- File Attachments ---\n';
+    enhancedMessage += "\n\n--- File Attachments ---\n";
     attachments.forEach((attachment, index) => {
       enhancedMessage += `\n[File ${index + 1}: ${attachment.name} (${attachment.type})]\n`;
 
@@ -376,32 +383,41 @@ function buildEnhancedMessage(message: string, attachments: FileAttachment[]): s
         enhancedMessage += `[Image attached: ${attachment.name}]\n`;
       }
     });
-    enhancedMessage += '\n--- End of Attachments ---\n';
+    enhancedMessage += "\n--- End of Attachments ---\n";
   }
 
   return enhancedMessage;
 }
 
 async function streamMistralResponse(messages: ChatMessage[]) {
+  const apiKey = getMistralApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "Mistral API key not configured. Please add your API key in Settings.",
+    );
+  }
+
   const mistralResponse = await fetch(MISTRAL_API_URL, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${MISTRAL_API_KEY}`
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: MISTRAL_MODEL_ID,
       messages: messages,
       temperature: 0.7,
       max_tokens: 4096,
-      stream: true
-    })
+      stream: true,
+    }),
   });
 
   if (!mistralResponse.ok) {
     const errorText = await mistralResponse.text();
-    console.error('Mistral API error:', mistralResponse.status, errorText);
-    throw new Error(`Mistral API returned ${mistralResponse.status}: ${errorText}`);
+    console.error("Mistral API error:", mistralResponse.status, errorText);
+    throw new Error(
+      `Mistral API returned ${mistralResponse.status}: ${errorText}`,
+    );
   }
 
   return mistralResponse.body;
@@ -409,12 +425,12 @@ async function streamMistralResponse(messages: ChatMessage[]) {
 
 async function streamLlamaResponse(prompt: string) {
   const chatRequest = {
-    model: 'atom',
+    model: "atom",
     messages: [
       {
-        role: 'user',
-        content: prompt
-      }
+        role: "user",
+        content: prompt,
+      },
     ],
     stream: true,
     temperature: 0.7,
@@ -422,21 +438,23 @@ async function streamLlamaResponse(prompt: string) {
   };
 
   const response = await fetch(`${LLAMA_SERVER_URL}/ollama/api/chat`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(chatRequest),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('LLaMA API error:', response.status, errorText);
-    
+    console.error("LLaMA API error:", response.status, errorText);
+
     if (response.status === 401) {
-      throw new Error('LLaMA server requires authentication. Please configure API credentials or use the Mistral API model.');
+      throw new Error(
+        "LLaMA server requires authentication. Please configure API credentials or use the Mistral API model.",
+      );
     }
-    
+
     throw new Error(`LLaMA API returned ${response.status}: ${errorText}`);
   }
 
@@ -446,68 +464,206 @@ async function streamLlamaResponse(prompt: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, sessionId, model, attachments, webSearchEnabled = false, loomEnabled = false, loomContext, history = [] } = body;
+    const {
+      message,
+      sessionId,
+      model,
+      attachments,
+      webSearchEnabled = false,
+      loomEnabled = false,
+      loomContext,
+      history = [],
+    } = body;
 
-    if (!message || typeof message !== 'string') {
+    if (!message || typeof message !== "string") {
       return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
+        { error: "Message is required" },
+        { status: 400 },
       );
+    }
+
+    /**
+     * Converts ADD_FILE markers to CANVAS_EDIT markers on-the-fly for Loom mode.
+     * This allows models to use their natural ADD_FILE format while the client receives CANVAS_EDIT format.
+     */
+    function convertAddFileToCanvasEdit(
+      chunk: string,
+      inAddFile: boolean,
+      addFileBuffer: string,
+    ): {
+      content: string;
+      inAddFile: boolean;
+      addFileBuffer: string;
+    } {
+      let result = chunk;
+      let newInAddFile = inAddFile;
+      let newBuffer = addFileBuffer;
+
+      // Check for ADD_FILE start marker
+      if (!inAddFile) {
+        const startIndex = result.indexOf("[ADD_FILE]");
+        if (startIndex !== -1) {
+          // Mark that we're inside an ADD_FILE block
+          newInAddFile = true;
+          console.log("[Loom Conversion] ADD_FILE start detected");
+          // Emit content before the marker and CANVAS_EDIT_START
+          const beforeMarker = result.slice(0, startIndex);
+          const afterMarker = result.slice(startIndex + "[ADD_FILE]".length);
+          result = beforeMarker + "[CANVAS_EDIT_START:1]";
+          // Start buffering content after [ADD_FILE]
+          newBuffer = afterMarker;
+        }
+      }
+
+      // If we're inside an ADD_FILE block, process the content
+      if (newInAddFile) {
+        const endIndex = result.indexOf("[/ADD_FILE]");
+
+        if (endIndex !== -1) {
+          // Found the end marker - extract and convert the buffered content
+          newBuffer += result.slice(0, endIndex);
+          const afterEnd = result.slice(endIndex + "[/ADD_FILE]".length);
+          console.log(
+            "[Loom Conversion] ADD_FILE end detected, buffered content length:",
+            newBuffer.length,
+          );
+
+          // Extract content field from JSON
+          let extractedContent = "";
+          try {
+            // Try to extract the "content" value from JSON
+            // Handle various whitespace and quote styles, including escaped newlines
+            const contentMatch = newBuffer.match(
+              /"content"\s*:\s*"((?:[\s\S]|\\.)*)"/,
+            );
+            if (contentMatch) {
+              extractedContent = contentMatch[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, "\\");
+              console.log(
+                "[Loom Conversion] Successfully extracted content, length:",
+                extractedContent.length,
+              );
+            } else {
+              console.log(
+                "[Loom Conversion] Failed to match content regex, buffer preview:",
+                newBuffer.substring(0, 200),
+              );
+            }
+          } catch (e) {
+            console.error("Error extracting content from ADD_FILE:", e);
+          }
+
+          // Build the converted result
+          if (extractedContent) {
+            result = extractedContent + "[CANVAS_EDIT_END]" + afterEnd;
+            console.log(
+              "[Loom Conversion] Successfully converted ADD_FILE to CANVAS_EDIT",
+            );
+          } else {
+            // If we couldn't extract content, try to clean up the JSON and use as-is
+            // Remove outer braces and any JSON formatting
+            const cleaned = newBuffer
+              .replace(/^\s*\{?\s*/, "")
+              .replace(/\s*\}?\s*$/, "")
+              .replace(/,\s*$/, "");
+            result = cleaned + "[CANVAS_EDIT_END]" + afterEnd;
+            console.log(
+              "[Loom Conversion] Using fallback cleaned content, length:",
+              cleaned.length,
+            );
+          }
+
+          // Reset state
+          newInAddFile = false;
+          newBuffer = "";
+          console.log("[Loom Conversion] Conversion complete, state reset");
+        } else {
+          // Still inside the block, buffer the content
+          newBuffer += result;
+          // Don't send partial JSON to the client yet
+          result = "";
+        }
+      }
+
+      return {
+        content: result,
+        inAddFile: newInAddFile,
+        addFileBuffer: newBuffer,
+      };
     }
 
     // Validate and sanitize history - filter out empty assistant messages (Mistral requires content)
     const conversationHistory: ChatMessage[] = Array.isArray(history)
       ? history
-          .filter((h: any) => h && typeof h.role === 'string' && typeof h.content === 'string' && h.content.trim() !== '')
+          .filter(
+            (h: any) =>
+              h &&
+              typeof h.role === "string" &&
+              typeof h.content === "string" &&
+              h.content.trim() !== "",
+          )
           .map((h: any) => ({ role: h.role, content: h.content }))
       : [];
 
     const enhancedMessage = buildEnhancedMessage(message, attachments || []);
 
-    let memoryContext = '';
+    let memoryContext = "";
     try {
       const memory = new MemorySystem();
       const relevantMemories = memory.getRelevantMemories(enhancedMessage);
-      
+
       if (relevantMemories.length > 0) {
-        memoryContext = '\n\n--- Memory Context ---\n';
+        memoryContext = "\n\n--- Memory Context ---\n";
         relevantMemories.forEach((mem, index) => {
           memoryContext += `Memory ${index + 1}: ${mem.content}\n`;
           if (mem.context) {
             memoryContext += `(Context: ${mem.context})\n`;
           }
         });
-        memoryContext += '\n--- End Memory Context ---\n';
+        memoryContext += "\n--- End Memory Context ---\n";
       }
     } catch (error) {
-      console.error('Error loading memory:', error);
+      console.error("Error loading memory:", error);
     }
 
-    let webSearchContext = '';
+    let webSearchContext = "";
     if (webSearchEnabled) {
       const needsWebSearch = shouldUseWebSearchForMessage(enhancedMessage);
-      
+
       if (needsWebSearch) {
         try {
-          const searchResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/api/search`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
+          const searchResponse = await fetch(
+            `${process.env.BASE_URL || "http://localhost:3000"}/api/search`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                query: enhancedMessage,
+                enable: true,
+              }),
             },
-            body: JSON.stringify({
-              query: enhancedMessage,
-              enable: true
-            }),
-          });
-           
+          );
+
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            if (searchData.success && searchData.results && searchData.results.length > 0) {
-              webSearchContext = '\n\n=== CURRENT WEB SEARCH RESULTS (2025) ===\n';
-              webSearchContext += 'IMPORTANT: These are REAL-TIME web search results. Use them NATURALLY in your response.\n';
-              webSearchContext += 'Integrate this information seamlessly without announcing "based on web search".\n';
-              webSearchContext += 'Only mention sources if they add credibility or specifically asked.\n\n';
-              
+            if (
+              searchData.success &&
+              searchData.results &&
+              searchData.results.length > 0
+            ) {
+              webSearchContext =
+                "\n\n=== CURRENT WEB SEARCH RESULTS (2025) ===\n";
+              webSearchContext +=
+                "IMPORTANT: These are REAL-TIME web search results. Use them NATURALLY in your response.\n";
+              webSearchContext +=
+                'Integrate this information seamlessly without announcing "based on web search".\n';
+              webSearchContext +=
+                "Only mention sources if they add credibility or specifically asked.\n\n";
+
               searchData.results.forEach((result: any, index: number) => {
                 webSearchContext += `=== RESULT ${index + 1} ===\n`;
                 webSearchContext += `TITLE: ${result.title}\n`;
@@ -516,7 +672,7 @@ export async function POST(request: NextRequest) {
                 webSearchContext += `FROM: ${result.source}\n`;
                 webSearchContext += `=== END RESULT ${index + 1} ===\n\n`;
               });
-              
+
               webSearchContext += `=== SEARCH SUMMARY ===\n`;
               webSearchContext += `Found ${searchData.totalResults} results in ${searchData.searchTime}s\n`;
               webSearchContext += `Current date: 2025 (use this for time-sensitive answers)\n`;
@@ -524,7 +680,7 @@ export async function POST(request: NextRequest) {
             }
           }
         } catch (error) {
-          console.error('Error performing web search:', error);
+          console.error("Error performing web search:", error);
         }
       }
     }
@@ -532,57 +688,70 @@ export async function POST(request: NextRequest) {
     let streamBody: ReadableStream | null = null;
 
     let systemPrompt = atomSystemPrompt;
-    if (model === 'loux-large-experimental') {
+    if (model === "loux-large-experimental") {
       systemPrompt = louxSystemPrompt;
     }
 
-    // Add project tool instructions (always available)
-    systemPrompt += buildProjectToolInstructions();
-
-    // Add loom instructions if loom mode is enabled
+    // Add loom instructions FIRST if loom mode is enabled (takes priority over ADD_FILE)
+    // When Loom is active, we DON'T include ADD_FILE instructions to avoid confusion
     if (loomEnabled && loomContext) {
       systemPrompt += buildLoomInstructions(loomContext);
+    } else {
+      // Only add project tool instructions (ADD_FILE) when Loom is NOT active
+      systemPrompt += buildProjectToolInstructions();
     }
 
-    if (model === 'atom-large-experimental' || model === 'loux-large-experimental') {
+    if (
+      model === "atom-large-experimental" ||
+      model === "loux-large-experimental" ||
+      model === "mistral"
+    ) {
       // Build messages array with system prompt, history, and current message
       const messages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt + memoryContext + webSearchContext },
+        {
+          role: "system",
+          content: systemPrompt + memoryContext + webSearchContext,
+        },
         // Include conversation history
         ...conversationHistory,
         // Add current user message
-        { role: 'user', content: enhancedMessage }
+        { role: "user", content: enhancedMessage },
       ];
 
-      const hasImages = attachments?.some((a: FileAttachment) => a.type.startsWith('image/'));
+      const hasImages = attachments?.some((a: FileAttachment) =>
+        a.type.startsWith("image/"),
+      );
 
       if (hasImages) {
         // Replace the last user message with image content
         messages[messages.length - 1] = {
-          role: 'user',
-          content: attachments
-            ?.filter((a: FileAttachment) => a.type.startsWith('image/') && a.base64)
-            .map((a: FileAttachment) => ({
-              type: 'image_url' as const,
-              image_url: { url: a.base64! }
-            })) || []
+          role: "user",
+          content:
+            attachments
+              ?.filter(
+                (a: FileAttachment) => a.type.startsWith("image/") && a.base64,
+              )
+              .map((a: FileAttachment) => ({
+                type: "image_url" as const,
+                image_url: { url: a.base64! },
+              })) || [],
         };
-        messages.push({ role: 'user', content: enhancedMessage });
+        messages.push({ role: "user", content: enhancedMessage });
       }
 
       streamBody = await streamMistralResponse(messages);
     } else {
       // Build conversation history for local LLaMA model
-      let historyText = '';
+      let historyText = "";
       if (conversationHistory.length > 0) {
-        historyText = '\n\n--- Conversation History ---\n';
+        historyText = "\n\n--- Conversation History ---\n";
         conversationHistory.forEach((msg) => {
-          const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+          const roleLabel = msg.role === "user" ? "User" : "Assistant";
           historyText += `${roleLabel}: ${msg.content}\n\n`;
         });
-        historyText += '--- End History ---\n';
+        historyText += "--- End History ---\n";
       }
-      
+
       const llamaPrompt = `${systemPrompt}${memoryContext}${webSearchContext}${historyText}\n\nUser: ${enhancedMessage}\n\nAssistant:`;
       streamBody = await streamLlamaResponse(llamaPrompt);
     }
@@ -598,7 +767,11 @@ export async function POST(request: NextRequest) {
 
         const reader = streamBody.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
+        let buffer = "";
+
+        // State for converting ADD_FILE to CANVAS_EDIT when Loom is active
+        let inAddFile = false;
+        let addFileBuffer = "";
 
         try {
           while (true) {
@@ -608,28 +781,52 @@ export async function POST(request: NextRequest) {
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
 
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
 
-            if (model === 'atom-large-experimental' || model === 'loux-large-experimental') {
+            if (
+              model === "atom-large-experimental" ||
+              model === "loux-large-experimental"
+            ) {
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
 
-                if (trimmed.startsWith('data: ')) {
+                if (trimmed.startsWith("data: ")) {
                   const data = trimmed.slice(6);
-                  if (data === '[DONE]') {
+                  if (data === "[DONE]") {
                     break;
                   }
 
                   try {
                     const parsed = JSON.parse(data);
-                    const content = parsed.choices?.[0]?.delta?.content;
+                    let content = parsed.choices?.[0]?.delta?.content;
                     if (content) {
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                      // If Loom is active, convert ADD_FILE markers to CANVAS_EDIT on-the-fly
+                      if (loomEnabled && loomContext) {
+                        const converted = convertAddFileToCanvasEdit(
+                          content,
+                          inAddFile,
+                          addFileBuffer,
+                        );
+                        content = converted.content;
+                        inAddFile = converted.inAddFile;
+                        addFileBuffer = converted.addFileBuffer;
+                      }
+
+                      controller.enqueue(
+                        encoder.encode(
+                          `data: ${JSON.stringify({ content })}\n\n`,
+                        ),
+                      );
                     }
                   } catch (e) {
-                    console.error('Error parsing SSE data:', e, 'Raw data:', data);
+                    console.error(
+                      "Error parsing SSE data:",
+                      e,
+                      "Raw data:",
+                      data,
+                    );
                   }
                 }
               }
@@ -640,74 +837,100 @@ export async function POST(request: NextRequest) {
 
                 try {
                   const parsed = JSON.parse(line);
-                  const content = parsed.message?.content;
+                  let content = parsed.message?.content;
                   if (content) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                    // If Loom is active, convert ADD_FILE markers to CANVAS_EDIT on-the-fly
+                    if (loomEnabled && loomContext) {
+                      const converted = convertAddFileToCanvasEdit(
+                        content,
+                        inAddFile,
+                        addFileBuffer,
+                      );
+                      content = converted.content;
+                      inAddFile = converted.inAddFile;
+                      addFileBuffer = converted.addFileBuffer;
+                    }
+
+                    controller.enqueue(
+                      encoder.encode(
+                        `data: ${JSON.stringify({ content })}\n\n`,
+                      ),
+                    );
                   }
                 } catch (e) {
-                  console.error('Error parsing LLaMA SSE data:', e, 'Raw data:', trimmed);
+                  console.error(
+                    "Error parsing LLaMA SSE data:",
+                    e,
+                    "Raw data:",
+                    trimmed,
+                  );
                 }
               }
             }
           }
         } catch (error) {
-          console.error('Stream error:', error);
+          console.error("Stream error:", error);
           controller.error(error);
         } finally {
           controller.close();
         }
-      }
+      },
     });
 
     (async () => {
       try {
         const memory = new MemorySystem();
-        const learnings = await memory.extractLearningsFromConversation(enhancedMessage);
-        
+        const learnings =
+          await memory.extractLearningsFromConversation(enhancedMessage);
+
         if (learnings.length > 0) {
-          learnings.forEach(learning => {
-            memory.addMemoryEntry('learning', learning, enhancedMessage.substring(0, 100), 2);
+          learnings.forEach((learning) => {
+            memory.addMemoryEntry(
+              "learning",
+              learning,
+              enhancedMessage.substring(0, 100),
+              2,
+            );
           });
         }
       } catch (error) {
-        console.error('Error extracting learnings:', error);
+        console.error("Error extracting learnings:", error);
       }
     })();
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
-    console.error('Chat API error:', error);
+    console.error("Chat API error:", error);
 
     if (error instanceof Error) {
-      if (error.message.includes('ECONNREFUSED')) {
+      if (error.message.includes("ECONNREFUSED")) {
         return NextResponse.json(
-          { error: 'Cannot connect to server. Please ensure server is running.' },
-          { status: 503 }
+          {
+            error: "Cannot connect to server. Please ensure server is running.",
+          },
+          { status: 503 },
         );
       }
-      
-      if (error.message.includes('authentication')) {
-        return NextResponse.json(
-          { error: error.message },
-          { status: 401 }
-        );
+
+      if (error.message.includes("authentication")) {
+        return NextResponse.json({ error: error.message }, { status: 401 });
       }
 
       return NextResponse.json(
-        { error: error.message || 'Failed to process your request' },
-        { status: 500 }
+        { error: error.message || "Failed to process your request" },
+        { status: 500 },
       );
     }
 
     return NextResponse.json(
-      { error: 'Failed to process your request' },
-      { status: 500 }
+      { error: "Failed to process your request" },
+      { status: 500 },
     );
   }
 }

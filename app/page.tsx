@@ -1,35 +1,145 @@
-'use client';
+"use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { Send, Settings, MessageSquare, Plus, X, Brain, PanelRightOpen, PanelRightClose, ChevronDown } from 'lucide-react';
-import Image from 'next/image';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Card } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import FileUpload from '@/components/file-upload';
-import { processFile, FileAttachment, formatFileSize, getFileIcon } from '@/lib/file-utils';
-import { LoomProvider, useLoom } from '@/components/loom/loom-provider';
-import { LoomPane } from '@/components/loom/loom-pane';
-import { SplitPane } from '@/components/ui/split-pane';
-import { LoomEditParser, getModelDisplayName, applyEditToDocument, parseProjectToolMarkers, cleanProjectToolMarkers, parseAddFileMarkers, cleanAddFileMarkers } from '@/lib/loom-utils';
-import type { LoomDocument } from '@/lib/loom-types';
-import { ProjectProvider, useProject } from '@/components/projects/project-provider';
-import { ProjectSwitcher } from '@/components/projects/project-switcher';
-import type { StoredSession, StoredMessage, StoredLoomDocument } from '@/lib/project-types';
+import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
+import {
+  Send,
+  Settings,
+  MessageSquare,
+  Plus,
+  X,
+  Brain,
+  PanelRightOpen,
+  PanelRightClose,
+  ChevronDown,
+  Copy,
+  Check,
+  RefreshCw,
+  Pencil,
+} from "lucide-react";
+import Image from "next/image";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import FileUpload from "@/components/file-upload";
+import {
+  processFile,
+  FileAttachment,
+  formatFileSize,
+  getFileIcon,
+} from "@/lib/file-utils";
+import { LoomProvider, useLoom } from "@/components/loom/loom-provider";
+import { LoomPane } from "@/components/loom/loom-pane";
+import { SplitPane } from "@/components/ui/split-pane";
+import {
+  LoomEditParser,
+  getModelDisplayName,
+  applyEditToDocument,
+  parseProjectToolMarkers,
+  cleanProjectToolMarkers,
+  parseAddFileMarkers,
+  cleanAddFileMarkers,
+} from "@/lib/loom-utils";
+import { extractOriginalContent } from "@/lib/diff-utils";
+import type { LoomDocument } from "@/lib/loom-types";
+import {
+  ProjectProvider,
+  useProject,
+} from "@/components/projects/project-provider";
+import { ProjectSwitcher } from "@/components/projects/project-switcher";
+import type {
+  StoredSession,
+  StoredMessage,
+  StoredLoomDocument,
+} from "@/lib/project-types";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   attachments?: FileAttachment[];
   timestamp: Date;
+  isEditing?: boolean;
+}
+
+// Message action buttons component
+function MessageActions({
+  message,
+  isLoading,
+  copiedMessageId,
+  editingMessageId,
+  onCopy,
+  onEdit,
+  onRegenerate,
+}: {
+  message: Message;
+  isLoading: boolean;
+  copiedMessageId: string | null;
+  editingMessageId: string | null;
+  onCopy: (id: string, content: string) => void;
+  onEdit: (message: Message) => void;
+  onRegenerate: (id: string) => void;
+}) {
+  if (
+    message.role !== "assistant" ||
+    !message.content ||
+    editingMessageId === message.id
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-border/20">
+      <button
+        onClick={() => onCopy(message.id, message.content)}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
+        title="Copy to clipboard"
+      >
+        {copiedMessageId === message.id ? (
+          <>
+            <Check className="h-3.5 w-3.5 text-green-500" />
+            <span className="text-green-500">Copied</span>
+          </>
+        ) : (
+          <>
+            <Copy className="h-3.5 w-3.5" />
+            <span>Copy</span>
+          </>
+        )}
+      </button>
+      <button
+        onClick={() => onEdit(message)}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
+        title="Edit response"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        <span>Edit</span>
+      </button>
+      <button
+        onClick={() => onRegenerate(message.id)}
+        disabled={isLoading}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Regenerate response"
+      >
+        <RefreshCw
+          className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
+        />
+        <span>Regenerate</span>
+      </button>
+    </div>
+  );
 }
 
 interface ChatSession {
@@ -46,11 +156,11 @@ function sessionToStored(session: ChatSession): StoredSession {
     id: session.id,
     title: session.title,
     timestamp: session.timestamp.getTime(),
-    messages: session.messages.map(m => ({
+    messages: session.messages.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
-      attachments: m.attachments?.map(a => ({
+      attachments: m.attachments?.map((a) => ({
         fileId: a.id,
         name: a.name,
         type: a.type,
@@ -58,13 +168,16 @@ function sessionToStored(session: ChatSession): StoredSession {
       })),
       timestamp: m.timestamp.getTime(),
     })),
-    loomDocument: session.loomDocument ? {
-      id: session.loomDocument.id,
-      title: session.loomDocument.title,
-      content: session.loomDocument.content,
-      createdAt: session.loomDocument.createdAt.getTime(),
-      updatedAt: session.loomDocument.updatedAt.getTime(),
-    } : undefined,
+    loomDocument: session.loomDocument
+      ? {
+          id: session.loomDocument.id,
+          title: session.loomDocument.title,
+          content: session.loomDocument.content,
+          createdAt: session.loomDocument.createdAt.getTime(),
+          updatedAt: session.loomDocument.updatedAt.getTime(),
+          lastModifiedBy: session.loomDocument.lastModifiedBy,
+        }
+      : undefined,
   };
 }
 
@@ -73,11 +186,11 @@ function storedToSession(stored: StoredSession): ChatSession {
     id: stored.id,
     title: stored.title,
     timestamp: new Date(stored.timestamp),
-    messages: stored.messages.map(m => ({
+    messages: stored.messages.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
-      attachments: m.attachments?.map(a => ({
+      attachments: m.attachments?.map((a) => ({
         id: a.fileId,
         name: a.name,
         type: a.type,
@@ -85,21 +198,39 @@ function storedToSession(stored: StoredSession): ChatSession {
       })),
       timestamp: new Date(m.timestamp),
     })),
-    loomDocument: stored.loomDocument ? {
-      id: stored.loomDocument.id,
-      title: stored.loomDocument.title,
-      content: stored.loomDocument.content,
-      createdAt: new Date(stored.loomDocument.createdAt),
-      updatedAt: new Date(stored.loomDocument.updatedAt),
-    } : undefined,
+    loomDocument: stored.loomDocument
+      ? {
+          id: stored.loomDocument.id,
+          title: stored.loomDocument.title,
+          content: stored.loomDocument.content,
+          createdAt: new Date(stored.loomDocument.createdAt),
+          updatedAt: new Date(stored.loomDocument.updatedAt),
+          lastModifiedBy: stored.loomDocument.lastModifiedBy || "user",
+        }
+      : undefined,
   };
 }
 
 // Inner component that uses loom context
 function ChatInterfaceInner() {
   const loom = useLoom();
-  const { state: projectState, saveSession, deleteSession: projectDeleteSession, createProject, switchProject, refreshProjects, refreshActiveProject, uploadFile } = useProject();
+  const {
+    state: projectState,
+    saveSession,
+    deleteSession: projectDeleteSession,
+    createProject,
+    switchProject,
+    refreshProjects,
+    refreshActiveProject,
+    uploadFile,
+  } = useProject();
   const loomEditParserRef = useRef(new LoomEditParser());
+
+  // Keep a ref to the current loom state to avoid stale closures in async handlers
+  const loomRef = useRef(loom);
+  useEffect(() => {
+    loomRef.current = loom;
+  }, [loom]);
 
   // State for project creation notification
   const [projectCreatedNotification, setProjectCreatedNotification] = useState<{
@@ -109,45 +240,58 @@ function ChatInterfaceInner() {
   } | null>(null);
 
   // Derive sessions from project state
-  const projectSessions: ChatSession[] = projectState.activeProject?.sessions.map(storedToSession) || [];
+  const projectSessions: ChatSession[] =
+    projectState.activeProject?.sessions.map(storedToSession) || [];
 
   // Local state for sessions (synced with project)
   const [sessions, setSessions] = useState<ChatSession[]>([
     {
-      id: '1',
-      title: 'New Chat',
+      id: "1",
+      title: "New Chat",
       messages: [],
       timestamp: new Date(),
     },
   ]);
-  const [currentSessionId, setCurrentSessionId] = useState('1');
-  const [input, setInput] = useState('');
+  const [currentSessionId, setCurrentSessionId] = useState("1");
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedModel, setSelectedModel] = useState('atom');
+  const [selectedModel, setSelectedModel] = useState("atom");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lastSavedRef = useRef<string>('');
+  const lastSavedRef = useRef<string>("");
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const isNearBottomRef = useRef(true);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
 
   // Sync sessions from project when project loads
   useEffect(() => {
     if (projectState.activeProject && projectState.isInitialized) {
-      const converted = projectState.activeProject.sessions.map(storedToSession);
+      const converted = projectState.activeProject.sessions.map((stored) => {
+        const session = storedToSession(stored);
+        // Filter out incomplete assistant messages (empty content) that may have been
+        // saved during an interrupted response - these cause a stuck "loading" state
+        session.messages = session.messages.filter(
+          (m) => m.role === "user" || (m.role === "assistant" && m.content),
+        );
+        return session;
+      });
       if (converted.length > 0) {
         setSessions(converted);
         // Set current session to active or first
-        const activeId = projectState.activeProject.activeSessionId || converted[0].id;
+        const activeId =
+          projectState.activeProject.activeSessionId || converted[0].id;
         setCurrentSessionId(activeId);
       } else {
         // Create a new session if project has none
         const newSession: ChatSession = {
           id: Date.now().toString(),
-          title: 'New Chat',
+          title: "New Chat",
           messages: [],
           timestamp: new Date(),
         };
@@ -157,7 +301,8 @@ function ChatInterfaceInner() {
     }
   }, [projectState.activeProject?.id, projectState.isInitialized]);
 
-  const currentSession = sessions.find((s) => s.id === currentSessionId) || sessions[0];
+  const currentSession =
+    sessions.find((s) => s.id === currentSessionId) || sessions[0];
 
   // Auto-save current session when messages change
   useEffect(() => {
@@ -168,7 +313,9 @@ function ChatInterfaceInner() {
       id: currentSession.id,
       title: currentSession.title,
       messageCount: currentSession.messages.length,
-      lastMessageContent: currentSession.messages[currentSession.messages.length - 1]?.content || '',
+      lastMessageContent:
+        currentSession.messages[currentSession.messages.length - 1]?.content ||
+        "",
     });
 
     // Skip if nothing changed
@@ -185,7 +332,8 @@ function ChatInterfaceInner() {
     const viewport = scrollViewportRef.current;
     if (!viewport) return true;
     const threshold = 100; // pixels from bottom
-    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    const distanceFromBottom =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
     return distanceFromBottom < threshold;
   }, []);
 
@@ -202,7 +350,7 @@ function ChatInterfaceInner() {
     if (viewport) {
       viewport.scrollTo({
         top: viewport.scrollHeight,
-        behavior: 'smooth'
+        behavior: "smooth",
       });
       setIsUserScrolledUp(false);
       isNearBottomRef.current = true;
@@ -213,7 +361,8 @@ function ChatInterfaceInner() {
   useEffect(() => {
     // Only auto-scroll if user hasn't scrolled up
     if (isNearBottomRef.current && scrollViewportRef.current) {
-      scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
+      scrollViewportRef.current.scrollTop =
+        scrollViewportRef.current.scrollHeight;
     }
   }, [currentSession.messages]);
 
@@ -224,7 +373,8 @@ function ChatInterfaceInner() {
     // Scroll to bottom when switching sessions
     setTimeout(() => {
       if (scrollViewportRef.current) {
-        scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
+        scrollViewportRef.current.scrollTop =
+          scrollViewportRef.current.scrollHeight;
       }
     }, 50);
   }, [currentSessionId]);
@@ -232,19 +382,19 @@ function ChatInterfaceInner() {
   const handleNewChat = () => {
     const newSession: ChatSession = {
       id: Date.now().toString(),
-      title: 'New Chat',
+      title: "New Chat",
       messages: [],
       timestamp: new Date(),
     };
     setSessions([newSession, ...sessions]);
     setCurrentSessionId(newSession.id);
-    setInput('');
+    setInput("");
     setAttachments([]);
   };
 
   const handleAddFile = async (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be less than 10MB');
+      alert("File size must be less than 10MB");
       return;
     }
     const attachment = await processFile(file);
@@ -252,7 +402,7 @@ function ChatInterfaceInner() {
   };
 
   const handleRemoveFile = (id: string) => {
-    setAttachments(attachments.filter(a => a.id !== id));
+    setAttachments(attachments.filter((a) => a.id !== id));
   };
 
   const handleSendMessage = async () => {
@@ -260,98 +410,110 @@ function ChatInterfaceInner() {
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
+      role: "user",
       content: input.trim(),
       attachments: attachments.length > 0 ? [...attachments] : undefined,
       timestamp: new Date(),
     };
 
-    setSessions(prevSessions => {
-      return prevSessions.map(session =>
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) =>
         session.id === currentSessionId
           ? {
               ...session,
               messages: [...session.messages, userMessage],
-              title: session.messages.length === 0 ? (input.trim() || 'File upload').slice(0, 50) : session.title,
+              title:
+                session.messages.length === 0
+                  ? (input.trim() || "File upload").slice(0, 50)
+                  : session.title,
             }
-          : session
+          : session,
       );
     });
 
-    setInput('');
+    setInput("");
     setAttachments([]);
     setIsLoading(true);
 
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: '',
+      role: "assistant",
+      content: "",
       timestamp: new Date(),
     };
 
-    setSessions(prevSessions => {
-      return prevSessions.map(session =>
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) =>
         session.id === currentSessionId
           ? { ...session, messages: [...session.messages, assistantMessage] }
-          : session
+          : session,
       );
     });
 
     try {
       // Build loom context if loom mode is active
-      const loomPayload = loom.state.isLoomMode && loom.state.document
-        ? {
-            loomEnabled: true,
-            loomContext: {
-              content: loom.state.document.content,
-              cursorLine: loom.state.userCursor.line,
-              lineCount: loom.state.document.content.split('\n').length,
-            },
-          }
-        : { loomEnabled: false };
+      const loomPayload =
+        loom.state.isLoomMode && loom.state.document
+          ? {
+              loomEnabled: true,
+              loomContext: {
+                content: loom.state.document.content,
+                cursorLine: loom.state.userCursor.line,
+                lineCount: loom.state.document.content.split("\n").length,
+              },
+            }
+          : { loomEnabled: false };
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
+      const response = await fetch("/api/chat", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-         body: JSON.stringify({
-           message: userMessage.content,
-           sessionId: currentSessionId,
-           model: selectedModel,
-           attachments: userMessage.attachments,
-           webSearchEnabled: webSearchEnabled,
-           // Send conversation history (excluding the message we just added)
-           history: currentSession.messages.slice(0, -1).map(m => ({
-             role: m.role,
-             content: m.content,
-           })),
-           ...loomPayload,
-         }),
+        body: JSON.stringify({
+          message: userMessage.content,
+          sessionId: currentSessionId,
+          model: selectedModel,
+          attachments: userMessage.attachments,
+          webSearchEnabled: webSearchEnabled,
+          // Send conversation history (excluding the message we just added)
+          history: currentSession.messages.slice(0, -1).map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          ...loomPayload,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Failed to send message (${response.status})`);
+        throw new Error(
+          errorData.error || `Failed to send message (${response.status})`,
+        );
       }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
-      let fullResponse = ''; // Accumulate complete response
-
-      const isLoomActive = loom.state.isLoomMode && loom.state.document;
+      let buffer = "";
+      let fullResponse = ""; // Accumulate complete response
 
       // Helper to clean loom edit markers from text for display
       const cleanLoomMarkers = (text: string): string => {
         // Remove complete loom edit blocks (model still uses CANVAS_EDIT markers)
-        let cleaned = text.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*?\[CANVAS_EDIT_END\]/g, '');
+        // Also handles markdown formatting (---) around the markers
+        let cleaned = text.replace(
+          /---\s*\[CANVAS_EDIT_START:\d+\]\s*---[\s\S]*?---\s*\[CANVAS_EDIT_END\]\s*---/g,
+          "",
+        );
+        cleaned = cleaned.replace(
+          /\[CANVAS_EDIT_START:\d+\]\s*(?:---\s*)?[\s\S]*?(?:\s*---\s*)?\[CANVAS_EDIT_END\]/g,
+          "",
+        );
         // Remove partial/incomplete start markers (in case we're mid-stream)
-        cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, '');
+        cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, "");
         // Remove any trailing partial marker that might be forming
-        cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, '');
-        cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, '');
-        cleaned = cleaned.replace(/\[[^\]]*$/, ''); // Any incomplete bracket
+        cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, "");
+        cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, "");
+        cleaned = cleaned.replace(/\[[^\]]*$/, ""); // Any incomplete bracket
         return cleaned.trim();
       };
 
@@ -364,7 +526,7 @@ function ChatInterfaceInner() {
       };
 
       if (!reader) {
-        throw new Error('No response body');
+        throw new Error("No response body");
       }
 
       while (true) {
@@ -374,17 +536,17 @@ function ChatInterfaceInner() {
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
 
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           const trimmed = line.trim();
 
-          if (trimmed === '' || trimmed === '[DONE]') {
+          if (trimmed === "" || trimmed === "[DONE]") {
             continue;
           }
 
-          if (trimmed.startsWith('data: ')) {
+          if (trimmed.startsWith("data: ")) {
             const data = trimmed.slice(6);
             try {
               const parsed = JSON.parse(data);
@@ -395,57 +557,153 @@ function ChatInterfaceInner() {
                 // Update chat with cleaned content (all tool markers stripped out)
                 const displayContent = cleanAllToolMarkers(fullResponse);
 
-                setSessions(prevSessions => {
-                  return prevSessions.map(session =>
+                setSessions((prevSessions) => {
+                  return prevSessions.map((session) =>
                     session.id === currentSessionId
                       ? {
                           ...session,
-                          messages: session.messages.map(msg =>
+                          messages: session.messages.map((msg) =>
                             msg.id === assistantMessage.id
                               ? { ...msg, content: displayContent }
-                              : msg
-                          )
+                              : msg,
+                          ),
                         }
-                      : session
+                      : session,
                   );
                 });
               }
             } catch (e) {
-              console.error('Error parsing SSE data:', e, 'Line:', trimmed);
+              console.error("Error parsing SSE data:", e, "Line:", trimmed);
             }
           }
         }
       }
 
       // After streaming completes, extract and apply loom edits
-      if (isLoomActive) {
-        const editMatch = fullResponse.match(/\[CANVAS_EDIT_START:(\d+)\]([\s\S]*?)\[CANVAS_EDIT_END\]/);
+      // Use loomRef.current to get the latest loom state (avoids stale closure)
+      const currentLoom = loomRef.current;
+      const isLoomStillActive =
+        currentLoom.state.isLoomMode && currentLoom.state.document;
+
+      // Debug logging for loom edit detection
+      console.log("[Loom Debug] === Streaming Complete ===");
+      console.log("[Loom Debug] isLoomStillActive:", isLoomStillActive);
+      console.log(
+        "[Loom Debug] loom.state.isLoomMode:",
+        currentLoom.state.isLoomMode,
+      );
+      console.log(
+        "[Loom Debug] loom.state.document exists:",
+        !!currentLoom.state.document,
+      );
+      console.log("[Loom Debug] fullResponse length:", fullResponse.length);
+      console.log(
+        "[Loom Debug] fullResponse preview:",
+        fullResponse.substring(0, 500),
+      );
+      console.log(
+        "[Loom Debug] Contains CANVAS_EDIT_START:",
+        fullResponse.includes("[CANVAS_EDIT_START"),
+      );
+      console.log(
+        "[Loom Debug] Contains CANVAS_EDIT_END:",
+        fullResponse.includes("[CANVAS_EDIT_END]"),
+      );
+
+      if (isLoomStillActive) {
+        // More flexible regex that handles markdown formatting around the markers
+        // The model sometimes wraps markers with --- or other markdown
+        const editMatch = fullResponse.match(
+          /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
+        );
+
+        console.log("[Loom Debug] editMatch found:", !!editMatch);
+        if (editMatch) {
+          console.log("[Loom Debug] Target line:", editMatch[1]);
+          console.log(
+            "[Loom Debug] Edit content length:",
+            editMatch[2]?.length,
+          );
+          console.log(
+            "[Loom Debug] autoAcceptEdits:",
+            currentLoom.state.autoAcceptEdits,
+          );
+        }
 
         if (editMatch) {
           const targetLine = parseInt(editMatch[1], 10);
           const editContent = editMatch[2].trim();
+          const currentDocContent = currentLoom.state.document?.content || "";
 
-          // Apply edit to loom
-          const currentDocContent = loom.state.document?.content || '';
-          const newContent = applyEditToDocument(currentDocContent, targetLine, editContent);
-          loom.updateContent(newContent);
-
-          // Final cleanup of chat message
-          const cleanedMessage = cleanLoomMarkers(fullResponse);
-          setSessions(prevSessions => {
-            return prevSessions.map(s =>
-              s.id === currentSessionId
-                ? {
-                    ...s,
-                    messages: s.messages.map(msg =>
-                      msg.id === assistantMessage.id
-                        ? { ...msg, content: cleanedMessage || 'Done! I\'ve updated the Loom for you.' }
-                        : msg
-                    )
-                  }
-                : s
+          // Check if auto-accept is enabled (use current state, not stale)
+          if (currentLoom.state.autoAcceptEdits) {
+            // Apply edit directly to loom (existing behavior)
+            const newContent = applyEditToDocument(
+              currentDocContent,
+              targetLine,
+              editContent,
             );
-          });
+            currentLoom.updateContent(newContent);
+
+            // Final cleanup of chat message
+            const cleanedMessage = cleanLoomMarkers(fullResponse);
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessage.id
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                "Done! I've updated the Loom for you.",
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+          } else {
+            // Queue the edit for review (new diff-based workflow)
+            const editContentLines = editContent.split("\n").length;
+            const originalContent = extractOriginalContent(
+              currentDocContent,
+              targetLine,
+              editContentLines,
+            );
+
+            // Add to pending edits queue
+            currentLoom.addPendingEdit(
+              targetLine,
+              originalContent,
+              editContent,
+            );
+
+            // Update chat message to indicate pending review
+            const cleanedMessage = cleanLoomMarkers(fullResponse);
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessage.id
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+          }
         }
       }
 
@@ -454,18 +712,18 @@ function ChatInterfaceInner() {
       if (projectToolResult.found && projectToolResult.payload) {
         try {
           // Create the project via API (with initial file support)
-          const response = await fetch('/api/projects', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const response = await fetch("/api/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: projectToolResult.payload.name,
-              description: projectToolResult.payload.description || '',
+              description: projectToolResult.payload.description || "",
               initialFile: projectToolResult.payload.initialFile,
             }),
           });
-          
+
           const data = await response.json();
-          
+
           if (data.success && data.project) {
             // Refresh project list and switch to the new project
             await refreshProjects();
@@ -477,60 +735,67 @@ function ChatInterfaceInner() {
               projectName: data.project.name,
               projectId: data.project.id,
             });
-            
+
             // Auto-hide notification after 5 seconds
             setTimeout(() => {
               setProjectCreatedNotification(null);
             }, 5000);
-            
+
             // Update the message to show cleaned content
-            const cleanedContent = projectToolResult.cleanedContent || 
+            const cleanedContent =
+              projectToolResult.cleanedContent ||
               `I've created the project "${data.project.name}" for you! You can find it in the project switcher.`;
-            
-            setSessions(prevSessions => {
-              return prevSessions.map(s =>
+
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
                 s.id === currentSessionId
                   ? {
                       ...s,
-                      messages: s.messages.map(msg =>
+                      messages: s.messages.map((msg) =>
                         msg.id === assistantMessage.id
                           ? { ...msg, content: cleanedContent }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     }
-                  : s
+                  : s,
               );
             });
           }
         } catch (error) {
-          console.error('Failed to create project from AI response:', error);
+          console.error("Failed to create project from AI response:", error);
         }
       }
 
       // Check for ADD_FILE tool in response
       const addFileResult = parseAddFileMarkers(fullResponse);
-      if (addFileResult.found && addFileResult.payload && projectState.activeProjectId) {
+      if (
+        addFileResult.found &&
+        addFileResult.payload &&
+        projectState.activeProjectId
+      ) {
         try {
           const fileName = addFileResult.payload.name;
           // Determine MIME type from file extension
-          const ext = fileName.split('.').pop()?.toLowerCase() || '';
+          const ext = fileName.split(".").pop()?.toLowerCase() || "";
           const mimeTypes: Record<string, string> = {
-            'md': 'text/markdown',
-            'txt': 'text/plain',
-            'js': 'text/javascript',
-            'ts': 'text/typescript',
-            'jsx': 'text/jsx',
-            'tsx': 'text/tsx',
-            'py': 'text/x-python',
-            'json': 'application/json',
-            'html': 'text/html',
-            'css': 'text/css',
-            'yaml': 'text/yaml',
-            'yml': 'text/yaml',
+            md: "text/markdown",
+            txt: "text/plain",
+            js: "text/javascript",
+            ts: "text/typescript",
+            jsx: "text/jsx",
+            tsx: "text/tsx",
+            py: "text/x-python",
+            json: "application/json",
+            html: "text/html",
+            css: "text/css",
+            yaml: "text/yaml",
+            yml: "text/yaml",
           };
-          const mimeType = mimeTypes[ext] || 'text/plain';
+          const mimeType = mimeTypes[ext] || "text/plain";
 
-          const blob = new Blob([addFileResult.payload.content], { type: mimeType });
+          const blob = new Blob([addFileResult.payload.content], {
+            type: mimeType,
+          });
           const file = new File([blob], fileName, { type: mimeType });
 
           // Use uploadFile from project provider - this updates state immediately
@@ -538,45 +803,52 @@ function ChatInterfaceInner() {
 
           if (uploadedFile) {
             // Update the message to show cleaned content
-            const cleanedContent = addFileResult.cleanedContent ||
+            const cleanedContent =
+              addFileResult.cleanedContent ||
               `I've created the file "${fileName}" in your workspace.`;
 
-            setSessions(prevSessions => {
-              return prevSessions.map(s =>
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
                 s.id === currentSessionId
                   ? {
                       ...s,
-                      messages: s.messages.map(msg =>
+                      messages: s.messages.map((msg) =>
                         msg.id === assistantMessage.id
                           ? { ...msg, content: cleanedContent }
-                          : msg
-                      )
+                          : msg,
+                      ),
                     }
-                  : s
+                  : s,
               );
             });
           } else {
-            console.error('Failed to create file');
+            console.error("Failed to create file");
           }
         } catch (error) {
-          console.error('Failed to create file from AI response:', error);
+          console.error("Failed to create file from AI response:", error);
         }
       }
     } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      setSessions(prevSessions => {
-        return prevSessions.map(session =>
+      console.error("Error sending message:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      setSessions((prevSessions) => {
+        return prevSessions.map((session) =>
           session.id === currentSessionId
             ? {
                 ...session,
                 messages: session.messages.map((msg, idx) =>
-                  idx === session.messages.length - 1 && msg.role === 'assistant'
-                    ? { ...msg, content: `⚠️ Error: ${errorMessage}`, isLoading: false }
-                    : msg
+                  idx === session.messages.length - 1 &&
+                  msg.role === "assistant"
+                    ? {
+                        ...msg,
+                        content: `⚠️ Error: ${errorMessage}`,
+                        isLoading: false,
+                      }
+                    : msg,
                 ),
               }
-            : session
+            : session,
         );
       });
     } finally {
@@ -585,9 +857,219 @@ function ChatInterfaceInner() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  // Copy message content to clipboard
+  const handleCopyMessage = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  // Start editing a message
+  const handleStartEdit = (message: Message) => {
+    setEditingMessageId(message.id);
+    setEditContent(message.content);
+  };
+
+  // Save edited message
+  const handleSaveEdit = (messageId: string) => {
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) =>
+        session.id === currentSessionId
+          ? {
+              ...session,
+              messages: session.messages.map((msg) =>
+                msg.id === messageId ? { ...msg, content: editContent } : msg,
+              ),
+            }
+          : session,
+      );
+    });
+    setEditingMessageId(null);
+    setEditContent("");
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditContent("");
+  };
+
+  // Regenerate response - resend the previous user message
+  const handleRegenerateResponse = async (assistantMessageId: string) => {
+    if (isLoading) return;
+
+    // Find the user message that preceded this assistant message
+    const messageIndex = currentSession.messages.findIndex(
+      (m) => m.id === assistantMessageId,
+    );
+    if (messageIndex <= 0) return;
+
+    const userMessage = currentSession.messages[messageIndex - 1];
+    if (userMessage.role !== "user") return;
+
+    // Store the user message content and attachments before modifying state
+    const messageContent = userMessage.content;
+    const messageAttachments = userMessage.attachments || [];
+
+    // Remove the assistant message and update sessions
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) =>
+        session.id === currentSessionId
+          ? {
+              ...session,
+              messages: session.messages.filter(
+                (msg) => msg.id !== assistantMessageId,
+              ),
+            }
+          : session,
+      );
+    });
+
+    // Start regeneration
+    setIsLoading(true);
+
+    // Create new assistant message for the response
+    const newAssistantMessage: Message = {
+      id: Date.now().toString(),
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
+
+    // Add the new assistant message placeholder
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) =>
+        session.id === currentSessionId
+          ? { ...session, messages: [...session.messages, newAssistantMessage] }
+          : session,
+      );
+    });
+
+    try {
+      // Build loom context if active
+      const loomPayload =
+        loom.state.isLoomMode && loom.state.document
+          ? {
+              loomEnabled: true,
+              loomContext: {
+                content: loom.state.document.content,
+                cursorLine: loom.state.userCursor.line,
+                lineCount: loom.state.document.content.split("\n").length,
+              },
+            }
+          : { loomEnabled: false };
+
+      // Get history up to (but not including) the message being regenerated
+      const historyMessages = currentSession.messages
+        .slice(0, messageIndex - 1)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: messageContent,
+          sessionId: currentSessionId,
+          model: selectedModel,
+          attachments: messageAttachments,
+          webSearchEnabled: webSearchEnabled,
+          history: historyMessages,
+          ...loomPayload,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error || `Failed to regenerate (${response.status})`,
+        );
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullResponse = "";
+
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed === "" || trimmed === "[DONE]") continue;
+
+          if (trimmed.startsWith("data: ")) {
+            const data = trimmed.slice(6);
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                fullResponse += parsed.content;
+                setSessions((prevSessions) => {
+                  return prevSessions.map((session) =>
+                    session.id === currentSessionId
+                      ? {
+                          ...session,
+                          messages: session.messages.map((msg) =>
+                            msg.id === newAssistantMessage.id
+                              ? { ...msg, content: fullResponse }
+                              : msg,
+                          ),
+                        }
+                      : session,
+                  );
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing SSE data:", e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error regenerating response:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to regenerate";
+      setSessions((prevSessions) => {
+        return prevSessions.map((session) =>
+          session.id === currentSessionId
+            ? {
+                ...session,
+                messages: session.messages.map((msg) =>
+                  msg.id === newAssistantMessage.id
+                    ? { ...msg, content: `⚠️ Error: ${errorMessage}` }
+                    : msg,
+                ),
+              }
+            : session,
+        );
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -615,7 +1097,7 @@ function ChatInterfaceInner() {
               <div className="flex-1">
                 <p className="font-medium text-sm">Project Created!</p>
                 <p className="text-xs text-muted-foreground">
-                  "{projectCreatedNotification.projectName}"
+                  {`"${projectCreatedNotification.projectName}"`}
                 </p>
               </div>
               <Button
@@ -641,7 +1123,7 @@ function ChatInterfaceInner() {
           </Card>
         </div>
       )}
-      
+
       {sidebarOpen && (
         <aside className="flex h-full w-80 flex-col border-r border-border/50 glass-strong">
           <div className="flex h-16 items-center justify-between border-b border-border/50 px-4">
@@ -654,7 +1136,9 @@ function ChatInterfaceInner() {
                   className="object-contain"
                 />
               </div>
-              <span className="text-lg font-semibold tracking-wide">Continuum</span>
+              <span className="text-lg font-semibold tracking-wide">
+                Continuum
+              </span>
             </div>
             <Button
               variant="ghost"
@@ -690,7 +1174,7 @@ function ChatInterfaceInner() {
                 >
                   <div className="flex items-center justify-between p-3">
                     <div className="flex-1 truncate text-sm font-medium">
-                      {session.title || 'New Chat'}
+                      {session.title || "New Chat"}
                     </div>
                     {sessions.length > 1 && (
                       <Button
@@ -713,26 +1197,37 @@ function ChatInterfaceInner() {
 
           <div className="border-t border-border/50 p-4 space-y-3">
             <div>
-              <label className="mb-2 block text-xs font-medium text-muted-foreground">Model</label>
+              <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                Model
+              </label>
               <Select value={selectedModel} onValueChange={setSelectedModel}>
                 <SelectTrigger className="w-full bg-background/50">
                   <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="atom">Atom (Local)</SelectItem>
-                  <SelectItem value="atom-large-experimental">Atom-Large-Experimental</SelectItem>
-                  <SelectItem value="loux-large-experimental">Loux-Large-Experimental</SelectItem>
+                  <SelectItem value="atom-large-experimental">
+                    Atom-Large-Experimental
+                  </SelectItem>
+                  <SelectItem value="loux-large-experimental">
+                    Loux-Large-Experimental
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-muted-foreground">Web Search</label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Web Search
+                </label>
                 <span className="relative">
                   <span className="text-xs text-yellow-400 cursor-help">ⓘ</span>
                   <span className="absolute -left-20 bottom-6 w-60 p-2 bg-background border border-border/50 rounded-md text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                    Enable real-time web search. 
-                    <span className="font-semibold">Configure Google API</span> in .env.search for real results.
+                    Enable real-time web search.
+                    <span className="font-semibold">
+                      Configure Google API
+                    </span>{" "}
+                    in .env.search for real results.
                   </span>
                 </span>
               </div>
@@ -752,7 +1247,7 @@ function ChatInterfaceInner() {
               ) : (
                 <PanelRightOpen className="h-4 w-4" />
               )}
-              {loom.state.isLoomMode ? 'Close Loom' : 'Open Loom'}
+              {loom.state.isLoomMode ? "Close Loom" : "Open Loom"}
             </Button>
             <Link href="/memory">
               <Button variant="ghost" className="w-full justify-start gap-2">
@@ -760,10 +1255,12 @@ function ChatInterfaceInner() {
                 Memory & Context
               </Button>
             </Link>
-            <Button variant="ghost" className="w-full justify-start gap-2">
-              <Settings className="h-4 w-4" />
-              Settings
-            </Button>
+            <Link href="/settings">
+              <Button variant="ghost" className="w-full justify-start gap-2">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </Link>
           </div>
         </aside>
       )}
@@ -797,7 +1294,7 @@ function ChatInterfaceInner() {
               size="icon"
               onClick={() => loom.toggleLoomMode()}
               className="h-9 w-9"
-              title={loom.state.isLoomMode ? 'Close Loom' : 'Open Loom'}
+              title={loom.state.isLoomMode ? "Close Loom" : "Open Loom"}
             >
               {loom.state.isLoomMode ? (
                 <PanelRightClose className="h-5 w-5" />
@@ -817,7 +1314,12 @@ function ChatInterfaceInner() {
           >
             {/* Left pane: Chat */}
             <div className="flex h-full flex-col relative">
-              <ScrollArea className="flex-1 p-6" ref={scrollAreaRef} viewportRef={scrollViewportRef} onScroll={handleScroll}>
+              <ScrollArea
+                className="flex-1 p-6"
+                ref={scrollAreaRef}
+                viewportRef={scrollViewportRef}
+                onScroll={handleScroll}
+              >
                 <div className="mx-auto max-w-4xl space-y-3">
                   {currentSession.messages.length === 0 ? (
                     <div className="flex min-h-[calc(100vh-16rem)] flex-col items-center justify-center text-center">
@@ -828,67 +1330,139 @@ function ChatInterfaceInner() {
                         by VANTA Research
                       </p>
                       <p className="max-w-md text-lg text-muted-foreground leading-relaxed">
-                        Start a conversation. Ask questions, get insights, and explore new ideas.
+                        Start a conversation. Ask questions, get insights, and
+                        explore new ideas.
                       </p>
                     </div>
                   ) : (
                     currentSession.messages.map((message) => (
                       <div
                         key={message.id}
-                        className={'flex ' + (message.role === 'user' ? 'justify-end' : 'justify-start')}
+                        className={
+                          "flex " +
+                          (message.role === "user"
+                            ? "justify-end"
+                            : "justify-start")
+                        }
                       >
-                        <div className={'max-w-[85%] ' + (message.role === 'user' ? 'ml-auto' : 'mr-auto')}>
-                          <Card
-                            className={'glass backdrop-blur-xl border-0 ' + (message.role === 'user' ? 'bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl' : 'bg-gradient-to-br from-purple-500/20 via-primary/15 to-primary/10 shadow-md shadow-purple-500/10 rounded-2xl')}
-                          >
-                            <div className="px-4 py-3">
-                              {message.role === 'assistant' && !message.content && !message.attachments && (
-                                <div className="flex gap-1.5">
-                                  <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '0ms' }} />
-                                  <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '150ms' }} />
-                                  <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '300ms' }} />
-                                </div>
-                              )}
-                              {message.attachments && message.attachments.length > 0 && (
-                                <div className="mb-3 space-y-2">
-                                  {message.attachments.map((attachment) => (
-                                    <div
-                                      key={attachment.id}
-                                      className="flex items-center gap-3 rounded-xl bg-background/50 border border-border/30 p-2.5"
-                                    >
-                                      {attachment.type.startsWith('image/') && attachment.base64 ? (
-                                        <div className="relative h-16 w-16 overflow-hidden rounded-lg shadow-sm">
-                                          <Image
-                                            src={attachment.base64}
-                                            alt={attachment.name}
-                                            fill
-                                            className="object-cover"
-                                          />
+                        <div
+                          className={
+                            message.role === "user"
+                              ? "max-w-[85%] ml-auto"
+                              : "max-w-[90%] mr-auto"
+                          }
+                        >
+                          {message.role === "user" ? (
+                            <Card className="glass backdrop-blur-xl border-0 bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl">
+                              <div className="px-4 py-3">
+                                {message.attachments &&
+                                  message.attachments.length > 0 && (
+                                    <div className="mb-3 space-y-2">
+                                      {message.attachments.map((attachment) => (
+                                        <div
+                                          key={attachment.id}
+                                          className="flex items-center gap-3 rounded-xl bg-background/50 border border-border/30 p-2.5"
+                                        >
+                                          {attachment.type.startsWith(
+                                            "image/",
+                                          ) && attachment.base64 ? (
+                                            <div className="relative h-16 w-16 overflow-hidden rounded-lg shadow-sm">
+                                              <Image
+                                                src={attachment.base64}
+                                                alt={attachment.name}
+                                                fill
+                                                className="object-cover"
+                                              />
+                                            </div>
+                                          ) : (
+                                            <span className="text-2xl">
+                                              {getFileIcon(attachment.type)}
+                                            </span>
+                                          )}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">
+                                              {attachment.name}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground/70">
+                                              {formatFileSize(attachment.size)}
+                                            </p>
+                                          </div>
                                         </div>
-                                      ) : (
-                                        <span className="text-2xl">
-                                          {getFileIcon(attachment.type)}
-                                        </span>
-                                      )}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium truncate">{attachment.name}</p>
-                                        <p className="text-xs text-muted-foreground/70">
-                                          {formatFileSize(attachment.size)}
-                                        </p>
-                                      </div>
+                                      ))}
                                     </div>
-                                  ))}
+                                  )}
+                                {message.content && (
+                                  <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {message.content}
+                                    </ReactMarkdown>
+                                  </div>
+                                )}
+                              </div>
+                            </Card>
+                          ) : (
+                            <div className="py-2">
+                              {!message.content && !message.attachments && (
+                                <div className="flex gap-1.5">
+                                  <div
+                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    style={{ animationDelay: "0ms" }}
+                                  />
+                                  <div
+                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    style={{ animationDelay: "150ms" }}
+                                  />
+                                  <div
+                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    style={{ animationDelay: "300ms" }}
+                                  />
                                 </div>
                               )}
-                              {message.content && (
-                                <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {message.content}
-                                  </ReactMarkdown>
+                              {editingMessageId === message.id ? (
+                                <div className="space-y-2">
+                                  <Textarea
+                                    value={editContent}
+                                    onChange={(e) =>
+                                      setEditContent(e.target.value)
+                                    }
+                                    className="min-h-[100px] bg-background/50 text-sm"
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleSaveEdit(message.id)}
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={handleCancelEdit}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
                                 </div>
+                              ) : (
+                                message.content && (
+                                  <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {message.content}
+                                    </ReactMarkdown>
+                                  </div>
+                                )
                               )}
+                              <MessageActions
+                                message={message}
+                                isLoading={isLoading}
+                                copiedMessageId={copiedMessageId}
+                                editingMessageId={editingMessageId}
+                                onCopy={handleCopyMessage}
+                                onEdit={handleStartEdit}
+                                onRegenerate={handleRegenerateResponse}
+                              />
                             </div>
-                          </Card>
+                          )}
                         </div>
                       </div>
                     ))
@@ -932,7 +1506,9 @@ function ChatInterfaceInner() {
                     </div>
                     <Button
                       onClick={handleSendMessage}
-                      disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                      disabled={
+                        (!input.trim() && attachments.length === 0) || isLoading
+                      }
                       className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
                       size="icon"
                     >
@@ -952,7 +1528,12 @@ function ChatInterfaceInner() {
           </SplitPane>
         ) : (
           <div className="flex flex-1 flex-col relative">
-            <ScrollArea className="flex-1 p-6" ref={scrollAreaRef} viewportRef={scrollViewportRef} onScroll={handleScroll}>
+            <ScrollArea
+              className="flex-1 p-6"
+              ref={scrollAreaRef}
+              viewportRef={scrollViewportRef}
+              onScroll={handleScroll}
+            >
               <div className="mx-auto max-w-4xl space-y-3">
                 {currentSession.messages.length === 0 ? (
                   <div className="flex min-h-[calc(100vh-16rem)] flex-col items-center justify-center text-center">
@@ -963,67 +1544,138 @@ function ChatInterfaceInner() {
                       by VANTA Research
                     </p>
                     <p className="max-w-md text-lg text-muted-foreground leading-relaxed">
-                      Start a conversation. Ask questions, get insights, and explore new ideas.
+                      Start a conversation. Ask questions, get insights, and
+                      explore new ideas.
                     </p>
                   </div>
                 ) : (
                   currentSession.messages.map((message) => (
                     <div
                       key={message.id}
-                      className={'flex ' + (message.role === 'user' ? 'justify-end' : 'justify-start')}
+                      className={
+                        "flex " +
+                        (message.role === "user"
+                          ? "justify-end"
+                          : "justify-start")
+                      }
                     >
-                      <div className={'max-w-[75%] ' + (message.role === 'user' ? 'ml-auto' : 'mr-auto')}>
-                        <Card
-                          className={'glass backdrop-blur-xl border-0 ' + (message.role === 'user' ? 'bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl' : 'bg-gradient-to-br from-purple-500/20 via-primary/15 to-primary/10 shadow-md shadow-purple-500/10 rounded-2xl')}
-                        >
-                          <div className="px-4 py-3">
-                            {message.role === 'assistant' && !message.content && !message.attachments && (
-                              <div className="flex gap-1.5">
-                                <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '0ms' }} />
-                                <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '150ms' }} />
-                                <div className="h-2 w-2 animate-bounce rounded-full bg-purple-500" style={{ animationDelay: '300ms' }} />
-                              </div>
-                            )}
-                            {message.attachments && message.attachments.length > 0 && (
-                              <div className="mb-3 space-y-2">
-                                {message.attachments.map((attachment) => (
-                                  <div
-                                    key={attachment.id}
-                                    className="flex items-center gap-3 rounded-xl bg-background/50 border border-border/30 p-2.5"
-                                  >
-                                    {attachment.type.startsWith('image/') && attachment.base64 ? (
-                                      <div className="relative h-16 w-16 overflow-hidden rounded-lg shadow-sm">
-                                        <Image
-                                          src={attachment.base64}
-                                          alt={attachment.name}
-                                          fill
-                                          className="object-cover"
-                                        />
+                      <div
+                        className={
+                          message.role === "user"
+                            ? "max-w-[75%] ml-auto"
+                            : "max-w-[85%] mr-auto"
+                        }
+                      >
+                        {message.role === "user" ? (
+                          <Card className="glass backdrop-blur-xl border-0 bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl">
+                            <div className="px-4 py-3">
+                              {message.attachments &&
+                                message.attachments.length > 0 && (
+                                  <div className="mb-3 space-y-2">
+                                    {message.attachments.map((attachment) => (
+                                      <div
+                                        key={attachment.id}
+                                        className="flex items-center gap-3 rounded-xl bg-background/50 border border-border/30 p-2.5"
+                                      >
+                                        {attachment.type.startsWith("image/") &&
+                                        attachment.base64 ? (
+                                          <div className="relative h-16 w-16 overflow-hidden rounded-lg shadow-sm">
+                                            <Image
+                                              src={attachment.base64}
+                                              alt={attachment.name}
+                                              fill
+                                              className="object-cover"
+                                            />
+                                          </div>
+                                        ) : (
+                                          <span className="text-2xl">
+                                            {getFileIcon(attachment.type)}
+                                          </span>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate">
+                                            {attachment.name}
+                                          </p>
+                                          <p className="text-xs text-muted-foreground/70">
+                                            {formatFileSize(attachment.size)}
+                                          </p>
+                                        </div>
                                       </div>
-                                    ) : (
-                                      <span className="text-2xl">
-                                        {getFileIcon(attachment.type)}
-                                      </span>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium truncate">{attachment.name}</p>
-                                      <p className="text-xs text-muted-foreground/70">
-                                        {formatFileSize(attachment.size)}
-                                      </p>
-                                    </div>
+                                    ))}
                                   </div>
-                                ))}
+                                )}
+                              {message.content && (
+                                <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {message.content}
+                                  </ReactMarkdown>
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+                        ) : (
+                          <div className="py-2">
+                            {!message.content && !message.attachments && (
+                              <div className="flex gap-1.5">
+                                <div
+                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  style={{ animationDelay: "0ms" }}
+                                />
+                                <div
+                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  style={{ animationDelay: "150ms" }}
+                                />
+                                <div
+                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  style={{ animationDelay: "300ms" }}
+                                />
                               </div>
                             )}
-                            {message.content && (
-                              <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                  {message.content}
-                                </ReactMarkdown>
+                            {editingMessageId === message.id ? (
+                              <div className="space-y-2">
+                                <Textarea
+                                  value={editContent}
+                                  onChange={(e) =>
+                                    setEditContent(e.target.value)
+                                  }
+                                  className="min-h-[100px] bg-background/50 text-sm"
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSaveEdit(message.id)}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={handleCancelEdit}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
                               </div>
+                            ) : (
+                              message.content && (
+                                <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {message.content}
+                                  </ReactMarkdown>
+                                </div>
+                              )
                             )}
+                            <MessageActions
+                              message={message}
+                              isLoading={isLoading}
+                              copiedMessageId={copiedMessageId}
+                              editingMessageId={editingMessageId}
+                              onCopy={handleCopyMessage}
+                              onEdit={handleStartEdit}
+                              onRegenerate={handleRegenerateResponse}
+                            />
                           </div>
-                        </Card>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1067,7 +1719,9 @@ function ChatInterfaceInner() {
                   </div>
                   <Button
                     onClick={handleSendMessage}
-                    disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                    disabled={
+                      (!input.trim() && attachments.length === 0) || isLoading
+                    }
                     className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
                     size="icon"
                   >

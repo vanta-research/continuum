@@ -1,6 +1,6 @@
 // Project system type definitions
 
-import type { LoomDocument } from './loom-types';
+import type { LoomDocument, ModifiedBy } from "./loom-types";
 
 // ============================================================
 // File Types
@@ -12,11 +12,11 @@ import type { LoomDocument } from './loom-types';
 export interface ProjectFile {
   id: string;
   name: string;
-  type: string;              // MIME type
+  type: string; // MIME type
   size: number;
-  path: string;              // Relative path within project: "files/abc123.pdf"
-  uploadedAt: number;        // Unix timestamp
-  content?: string;          // Extracted text for PDFs/text files (for context)
+  path: string; // Relative path within project: "files/abc123.pdf"
+  uploadedAt: number; // Unix timestamp
+  content?: string; // Extracted text for PDFs/text files (for context)
 }
 
 /**
@@ -38,10 +38,10 @@ export interface ProjectFileReference {
  */
 export interface StoredMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   attachments?: ProjectFileReference[];
-  timestamp: number;         // Unix timestamp (Date not JSON-serializable)
+  timestamp: number; // Unix timestamp (Date not JSON-serializable)
 }
 
 // ============================================================
@@ -57,6 +57,7 @@ export interface StoredLoomDocument {
   content: string;
   createdAt: number;
   updatedAt: number;
+  lastModifiedBy?: ModifiedBy; // Optional for backward compatibility
 }
 
 /**
@@ -66,7 +67,7 @@ export interface StoredSession {
   id: string;
   title: string;
   messages: StoredMessage[];
-  timestamp: number;         // Unix timestamp
+  timestamp: number; // Unix timestamp
   loomDocument?: StoredLoomDocument;
 }
 
@@ -85,7 +86,7 @@ export interface Project {
   updatedAt: number;
   sessions: StoredSession[];
   files: ProjectFile[];
-  activeSessionId?: string;  // Last active session in this project
+  activeSessionId?: string; // Last active session in this project
 }
 
 /**
@@ -126,6 +127,7 @@ export function loomDocumentToStored(doc: LoomDocument): StoredLoomDocument {
     content: doc.content,
     createdAt: doc.createdAt.getTime(),
     updatedAt: doc.updatedAt.getTime(),
+    lastModifiedBy: doc.lastModifiedBy,
   };
 }
 
@@ -139,6 +141,7 @@ export function storedToLoomDocument(doc: StoredLoomDocument): LoomDocument {
     content: doc.content,
     createdAt: new Date(doc.createdAt),
     updatedAt: new Date(doc.updatedAt),
+    lastModifiedBy: doc.lastModifiedBy || "user", // Default to user for old documents
   };
 }
 

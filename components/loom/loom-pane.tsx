@@ -1,16 +1,17 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, useRef } from 'react';
-import { FileText, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useLoom } from './loom-provider';
-import { LoomToolbar } from './loom-toolbar';
-import { LoomEditor } from './loom-editor';
-import { LoomPreview } from './loom-preview';
-import { LoomFileSidebar } from './loom-file-sidebar';
-import { ModelTypingIndicator } from './model-typing-indicator';
-import { useProject } from '@/components/projects/project-provider';
-import { cn } from '@/lib/utils';
+import React, { useEffect, useState, useRef } from "react";
+import { FileText, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useLoom } from "./loom-provider";
+import { LoomToolbar } from "./loom-toolbar";
+import { LoomEditor } from "./loom-editor";
+import { LoomPreview } from "./loom-preview";
+import { LoomFileSidebar } from "./loom-file-sidebar";
+import { ModelTypingIndicator } from "./model-typing-indicator";
+import { PendingEditReview } from "./pending-edit-review";
+import { useProject } from "@/components/projects/project-provider";
+import { cn } from "@/lib/utils";
 
 interface LoomPaneProps {
   sessionId: string;
@@ -21,16 +22,17 @@ interface LoomPaneProps {
 
 export function LoomPane({
   sessionId,
-  modelName = 'Model',
+  modelName = "Model",
   onClose,
   className,
 }: LoomPaneProps) {
   const { state, createDocument, setFileModified, updateContent } = useLoom();
   const { state: projectState, uploadFile } = useProject();
-  const { document, modelEdit, openFileId, isFileModified } = state;
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
+  const { document, modelEdit, openFileId, isFileModified, pendingEdits } =
+    state;
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastContentRef = useRef<string>('');
+  const lastContentRef = useRef<string>("");
 
   // Auto-save file when content changes
   useEffect(() => {
@@ -53,14 +55,17 @@ export function LoomPane({
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         // Save file content via PATCH endpoint
-        await fetch(`/api/projects/${projectState.activeProject!.id}/files/${openFileId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: document.content }),
-        });
+        await fetch(
+          `/api/projects/${projectState.activeProject!.id}/files/${openFileId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: document.content }),
+          },
+        );
         setFileModified(false);
       } catch (error) {
-        console.error('Failed to save file:', error);
+        console.error("Failed to save file:", error);
       }
     }, 1500); // 1.5 second debounce
 
@@ -69,7 +74,13 @@ export function LoomPane({
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [document?.content, openFileId, projectState.activeProject, isFileModified, setFileModified]);
+  }, [
+    document?.content,
+    openFileId,
+    projectState.activeProject,
+    isFileModified,
+    setFileModified,
+  ]);
 
   const handleCreateDocument = () => {
     createDocument(sessionId);
@@ -78,10 +89,10 @@ export function LoomPane({
   return (
     <div
       className={cn(
-        'loom-pane flex h-full',
-        'bg-background/30 backdrop-blur-md',
-        'border-l border-border/50',
-        className
+        "loom-pane flex h-full",
+        "bg-background/30 backdrop-blur-md",
+        "border-l border-border/50",
+        className,
       )}
     >
       {/* File Sidebar */}
@@ -98,7 +109,7 @@ export function LoomPane({
         <div className="relative flex-1 overflow-hidden">
           {document ? (
             <>
-              {viewMode === 'edit' ? (
+              {viewMode === "edit" ? (
                 <LoomEditor />
               ) : (
                 <LoomPreview content={document.content} />
@@ -121,7 +132,7 @@ export function LoomPane({
                     </div>
                     <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-32 overflow-auto">
                       {modelEdit.streamBuffer.slice(0, 200)}
-                      {modelEdit.streamBuffer.length > 200 && '...'}
+                      {modelEdit.streamBuffer.length > 200 && "..."}
                     </pre>
                   </div>
                 </div>
@@ -143,6 +154,9 @@ export function LoomPane({
             </div>
           )}
         </div>
+
+        {/* Pending Edit Review Panel */}
+        {pendingEdits.length > 0 && <PendingEditReview />}
       </div>
     </div>
   );
