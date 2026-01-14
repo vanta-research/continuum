@@ -11,6 +11,11 @@ import {
   Eye,
   EyeOff,
   Palette,
+  Globe,
+  Server,
+  Cpu,
+  Cloud,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,13 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import ModelDownloader from "@/components/model-downloader";
 import {
@@ -33,6 +31,89 @@ import {
   AccentColor,
 } from "@/components/accent-color-provider";
 
+// Provider configuration type
+interface ProviderConfig {
+  id: string;
+  name: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  apiKeyField?: string;
+  apiKeyPlaceholder?: string;
+  apiKeyHelpText?: string;
+  apiKeyUrl?: string;
+  endpoint?: string;
+  isLocal?: boolean;
+  requiresCustomEndpoint?: boolean;
+}
+
+const PROVIDERS: ProviderConfig[] = [
+  {
+    id: "atom",
+    name: "Local AI",
+    description: "Ollama / llama.cpp",
+    icon: <Cpu className="h-4 w-4" />,
+    color: "bg-green-500",
+    isLocal: true,
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    description: "GPT-4o, GPT-4, GPT-3.5",
+    icon: <Cloud className="h-4 w-4" />,
+    color: "bg-emerald-500",
+    apiKeyField: "openaiApiKey",
+    apiKeyPlaceholder: "sk-...",
+    apiKeyHelpText: "Get your API key from OpenAI",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    endpoint: "https://api.openai.com/v1/chat/completions",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    description: "Claude 3.5, Claude 3",
+    icon: <Cloud className="h-4 w-4" />,
+    color: "bg-orange-500",
+    apiKeyField: "anthropicApiKey",
+    apiKeyPlaceholder: "sk-ant-...",
+    apiKeyHelpText: "Get your API key from Anthropic Console",
+    apiKeyUrl: "https://console.anthropic.com/settings/keys",
+    endpoint: "https://api.anthropic.com/v1/messages",
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    description: "Mistral Large, Medium, Small",
+    icon: <Cloud className="h-4 w-4" />,
+    color: "bg-blue-500",
+    apiKeyField: "mistralApiKey",
+    apiKeyPlaceholder: "...",
+    apiKeyHelpText: "Get your API key from Mistral Console",
+    apiKeyUrl: "https://console.mistral.ai/api-keys/",
+    endpoint: "https://api.mistral.ai/v1/chat/completions",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    description: "Access 100+ models",
+    icon: <Globe className="h-4 w-4" />,
+    color: "bg-purple-500",
+    apiKeyField: "openrouterApiKey",
+    apiKeyPlaceholder: "sk-or-...",
+    apiKeyHelpText: "Get your API key from OpenRouter",
+    apiKeyUrl: "https://openrouter.ai/keys",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+  },
+  {
+    id: "custom",
+    name: "Custom Endpoint",
+    description: "OpenAI-compatible API",
+    icon: <Server className="h-4 w-4" />,
+    color: "bg-zinc-500",
+    requiresCustomEndpoint: true,
+  },
+];
+
 export default function Settings() {
   const [serverUrl, setServerUrl] = useState("http://localhost:8082");
   const [temperature, setTemperature] = useState([0.7]);
@@ -40,8 +121,21 @@ export default function Settings() {
   const [streamResponse, setStreamResponse] = useState(true);
   const [selectedModel, setSelectedModel] = useState("atom");
   const [hfToken, setHfToken] = useState("");
+
+  // API Keys
   const [mistralApiKey, setMistralApiKey] = useState("");
-  const [showMistralKey, setShowMistralKey] = useState(false);
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+
+  // Custom endpoint
+  const [customEndpointUrl, setCustomEndpointUrl] = useState("");
+  const [customEndpointApiKey, setCustomEndpointApiKey] = useState("");
+  const [customEndpointModelId, setCustomEndpointModelId] = useState("");
+
+  // Visibility toggles for API keys
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+
   const [saveMessage, setSaveMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"general" | "models">("general");
   const { accentColor, setAccentColor } = useAccentColor();
@@ -66,6 +160,18 @@ export default function Settings() {
             if (data.settings.hfToken) setHfToken(data.settings.hfToken);
             if (data.settings.mistralApiKey)
               setMistralApiKey(data.settings.mistralApiKey);
+            if (data.settings.openaiApiKey)
+              setOpenaiApiKey(data.settings.openaiApiKey);
+            if (data.settings.anthropicApiKey)
+              setAnthropicApiKey(data.settings.anthropicApiKey);
+            if (data.settings.openrouterApiKey)
+              setOpenrouterApiKey(data.settings.openrouterApiKey);
+            if (data.settings.customEndpointUrl)
+              setCustomEndpointUrl(data.settings.customEndpointUrl);
+            if (data.settings.customEndpointApiKey)
+              setCustomEndpointApiKey(data.settings.customEndpointApiKey);
+            if (data.settings.customEndpointModelId)
+              setCustomEndpointModelId(data.settings.customEndpointModelId);
           }
         }
       } catch (error) {
@@ -90,6 +196,12 @@ export default function Settings() {
           selectedModel,
           hfToken,
           mistralApiKey,
+          openaiApiKey,
+          anthropicApiKey,
+          openrouterApiKey,
+          customEndpointUrl,
+          customEndpointApiKey,
+          customEndpointModelId,
         }),
       });
 
@@ -119,10 +231,8 @@ export default function Settings() {
 
       if (data.connected) {
         if (data.modelLoaded === false) {
-          // Server running but no model loaded
           setSaveMessage("⚠️ Server connected but no model loaded");
         } else {
-          // Full success
           setSaveMessage("✓ " + data.message);
         }
         setTimeout(() => setSaveMessage(""), 5000);
@@ -138,9 +248,46 @@ export default function Settings() {
 
   const handleTokenChange = (token: string) => {
     setHfToken(token);
-    // Auto-save when token is validated
     handleSave();
   };
+
+  const toggleKeyVisibility = (keyId: string) => {
+    setShowKeys((prev) => ({ ...prev, [keyId]: !prev[keyId] }));
+  };
+
+  const getApiKeyValue = (fieldName: string): string => {
+    switch (fieldName) {
+      case "openaiApiKey":
+        return openaiApiKey;
+      case "anthropicApiKey":
+        return anthropicApiKey;
+      case "mistralApiKey":
+        return mistralApiKey;
+      case "openrouterApiKey":
+        return openrouterApiKey;
+      default:
+        return "";
+    }
+  };
+
+  const setApiKeyValue = (fieldName: string, value: string) => {
+    switch (fieldName) {
+      case "openaiApiKey":
+        setOpenaiApiKey(value);
+        break;
+      case "anthropicApiKey":
+        setAnthropicApiKey(value);
+        break;
+      case "mistralApiKey":
+        setMistralApiKey(value);
+        break;
+      case "openrouterApiKey":
+        setOpenrouterApiKey(value);
+        break;
+    }
+  };
+
+  const selectedProvider = PROVIDERS.find((p) => p.id === selectedModel);
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-zinc-950/50">
@@ -174,9 +321,11 @@ export default function Settings() {
           <div className="flex gap-3">
             {activeTab === "general" && (
               <>
-                <Button variant="outline" onClick={handleTestConnection}>
-                  Test Connection
-                </Button>
+                {selectedModel === "atom" && (
+                  <Button variant="outline" onClick={handleTestConnection}>
+                    Test Connection
+                  </Button>
+                )}
                 <Button onClick={handleSave} className="gap-2">
                   <Save className="h-4 w-4" />
                   Save
@@ -221,200 +370,258 @@ export default function Settings() {
         <div className="mx-auto max-w-5xl space-y-6">
           {activeTab === "general" ? (
             <>
+              {/* Provider Selection Card */}
               <Card className="glass-strong">
                 <div className="p-6 space-y-6">
                   <div>
-                    <h2 className="mb-4 text-lg font-semibold">
-                      Server Configuration
-                    </h2>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="model">Model</Label>
-                        <Select
-                          value={selectedModel}
-                          onValueChange={setSelectedModel}
-                        >
-                          <SelectTrigger className="bg-background/50">
-                            <SelectValue placeholder="Select model" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="atom">
-                              <div className="flex items-center gap-2">
-                                <span className="h-2 w-2 rounded-full bg-green-500" />
-                                Local AI (Ollama / llama.cpp)
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="mistral">
-                              <div className="flex items-center gap-2">
-                                <span className="h-2 w-2 rounded-full bg-blue-500" />
-                                Mistral API (Cloud)
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          Local: Auto-detects Ollama (recommended) or llama.cpp
-                          • Cloud: Uses Mistral&apos;s API (requires key)
-                        </p>
-                      </div>
-
-                      {selectedModel === "atom" && (
-                        <div className="space-y-4">
-                          <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                            <p className="text-sm text-green-400">
-                              <strong>Auto-detection:</strong> Continuum will
-                              automatically detect and use Ollama
-                              (localhost:11434) or llama.cpp (localhost:8082).
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="serverUrl">
-                              llama.cpp Server URL (Optional)
-                            </Label>
-                            <Input
-                              id="serverUrl"
-                              value={serverUrl}
-                              onChange={(e) => setServerUrl(e.target.value)}
-                              placeholder="http://localhost:8082"
-                              className="bg-background/50"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Only needed if using llama.cpp on a custom
-                              port/host. Ollama uses default port 11434.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-border/50 pt-6">
-                    <h2 className="mb-4 text-lg font-semibold">
-                      Model Parameters
-                    </h2>
-
-                    <div className="space-y-6">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="temperature">Temperature</Label>
-                          <span className="text-sm text-muted-foreground">
-                            {temperature[0].toFixed(2)}
-                          </span>
-                        </div>
-                        <Slider
-                          id="temperature"
-                          value={temperature}
-                          onValueChange={setTemperature}
-                          min={0}
-                          max={2}
-                          step={0.1}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Controls randomness. Lower values produce more
-                          deterministic responses.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="maxTokens">Max Tokens</Label>
-                          <span className="text-sm text-muted-foreground">
-                            {maxTokens[0]}
-                          </span>
-                        </div>
-                        <Slider
-                          id="maxTokens"
-                          value={maxTokens}
-                          onValueChange={setMaxTokens}
-                          min={256}
-                          max={8192}
-                          step={128}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Maximum number of tokens in the response.
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
-                        <div className="space-y-1">
-                          <Label htmlFor="streamResponse">
-                            Stream Responses
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Display responses as they are generated
-                          </p>
-                        </div>
-                        <Switch
-                          id="streamResponse"
-                          checked={streamResponse}
-                          onCheckedChange={setStreamResponse}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-border/50 pt-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Palette className="h-5 w-5 text-primary" />
-                      <h2 className="text-lg font-semibold">Accent Color</h2>
-                    </div>
+                    <h2 className="mb-4 text-lg font-semibold">AI Provider</h2>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Choose your preferred accent color for the interface
+                      Choose your preferred AI provider. Local options run on
+                      your machine, cloud providers require API keys.
                     </p>
-                    <div className="flex gap-3">
-                      {ACCENT_COLORS.map((colorOption) => (
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {PROVIDERS.map((provider) => (
                         <button
-                          key={colorOption.id}
-                          onClick={() =>
-                            setAccentColor(colorOption.id as AccentColor)
-                          }
-                          className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg transition-all ${
-                            accentColor === colorOption.id
-                              ? "bg-white/10 ring-2 ring-primary"
-                              : "hover:bg-white/5"
+                          key={provider.id}
+                          onClick={() => setSelectedModel(provider.id)}
+                          className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                            selectedModel === provider.id
+                              ? "border-primary bg-primary/10"
+                              : "border-border/50 hover:border-border hover:bg-muted/30"
                           }`}
-                          title={colorOption.description}
                         >
-                          <div
-                            className={`w-8 h-8 rounded-full transition-transform ${
-                              accentColor === colorOption.id
-                                ? "scale-110 ring-2 ring-white/30"
-                                : "group-hover:scale-105"
-                            }`}
-                            style={{ backgroundColor: colorOption.color }}
-                          />
-                          <span className="text-xs font-medium">
-                            {colorOption.name}
-                          </span>
-                          {accentColor === colorOption.id && (
-                            <Check className="absolute -top-1 -right-1 h-4 w-4 text-primary bg-background rounded-full" />
+                          <div className="flex items-center gap-2 mb-2">
+                            <span
+                              className={`h-2 w-2 rounded-full ${provider.color}`}
+                            />
+                            <span className="font-medium">{provider.name}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {provider.description}
+                          </p>
+                          {selectedModel === provider.id && (
+                            <Check className="absolute top-2 right-2 h-4 w-4 text-primary" />
                           )}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="border-t border-border/50 pt-6">
-                    <h2 className="mb-4 text-lg font-semibold">About</h2>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <p>Continuum - AI for humans by VANTA Research</p>
-                      <p>Designed for clean, professional AI interactions.</p>
-                      <p className="mt-4">Version: 0.1.0</p>
-                      <p className="mt-4 text-xs">
-                        Icons by{" "}
-                        <a
-                          href="https://www.flaticon.com/uicons"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          Flaticon
-                        </a>
+                  {/* Provider-specific configuration */}
+                  {selectedProvider?.isLocal && (
+                    <div className="border-t border-border/50 pt-6 space-y-4">
+                      <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                        <p className="text-sm text-green-400">
+                          <strong>Auto-detection:</strong> Continuum will
+                          automatically detect and use Ollama (localhost:11434)
+                          or llama.cpp (localhost:8082).
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="serverUrl">
+                          llama.cpp Server URL (Optional)
+                        </Label>
+                        <Input
+                          id="serverUrl"
+                          value={serverUrl}
+                          onChange={(e) => setServerUrl(e.target.value)}
+                          placeholder="http://localhost:8082"
+                          className="bg-background/50"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Only needed if using llama.cpp on a custom port/host.
+                          Ollama uses default port 11434.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedProvider?.requiresCustomEndpoint && (
+                    <div className="border-t border-border/50 pt-6 space-y-4">
+                      <div className="p-3 rounded-lg bg-zinc-500/10 border border-zinc-500/20">
+                        <p className="text-sm text-zinc-400">
+                          <strong>Custom Endpoint:</strong> Connect to any
+                          OpenAI-compatible API (e.g., vLLM,
+                          text-generation-inference, LocalAI, or self-hosted
+                          models).
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="customEndpointUrl">
+                            API Endpoint URL
+                          </Label>
+                          <Input
+                            id="customEndpointUrl"
+                            value={customEndpointUrl}
+                            onChange={(e) =>
+                              setCustomEndpointUrl(e.target.value)
+                            }
+                            placeholder="https://your-api.example.com/v1/chat/completions"
+                            className="bg-background/50 font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The full URL to the chat completions endpoint
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="customEndpointModelId">
+                            Model ID
+                          </Label>
+                          <Input
+                            id="customEndpointModelId"
+                            value={customEndpointModelId}
+                            onChange={(e) =>
+                              setCustomEndpointModelId(e.target.value)
+                            }
+                            placeholder="gpt-4, llama-3-70b, etc."
+                            className="bg-background/50 font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The model identifier to use in API requests
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="customEndpointApiKey">
+                            API Key (Optional)
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="customEndpointApiKey"
+                              type={showKeys["custom"] ? "text" : "password"}
+                              value={customEndpointApiKey}
+                              onChange={(e) =>
+                                setCustomEndpointApiKey(e.target.value)
+                              }
+                              placeholder="Leave empty if not required"
+                              className="bg-background/50 pr-10 font-mono text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => toggleKeyVisibility("custom")}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {showKeys["custom"] ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* Model Parameters Card */}
+              <Card className="glass-strong">
+                <div className="p-6 space-y-6">
+                  <h2 className="text-lg font-semibold">Model Parameters</h2>
+
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="temperature">Temperature</Label>
+                        <span className="text-sm text-muted-foreground">
+                          {temperature[0].toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        id="temperature"
+                        value={temperature}
+                        onValueChange={setTemperature}
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Controls randomness. Lower values produce more
+                        deterministic responses.
                       </p>
                     </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="maxTokens">Max Tokens</Label>
+                        <span className="text-sm text-muted-foreground">
+                          {maxTokens[0]}
+                        </span>
+                      </div>
+                      <Slider
+                        id="maxTokens"
+                        value={maxTokens}
+                        onValueChange={setMaxTokens}
+                        min={256}
+                        max={8192}
+                        step={128}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Maximum number of tokens in the response.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 p-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="streamResponse">Stream Responses</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Display responses as they are generated
+                        </p>
+                      </div>
+                      <Switch
+                        id="streamResponse"
+                        checked={streamResponse}
+                        onCheckedChange={setStreamResponse}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Accent Color Card */}
+              <Card className="glass-strong">
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Palette className="h-5 w-5 text-primary" />
+                    <h2 className="text-lg font-semibold">Accent Color</h2>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Choose your preferred accent color for the interface
+                  </p>
+                  <div className="flex gap-3">
+                    {ACCENT_COLORS.map((colorOption) => (
+                      <button
+                        key={colorOption.id}
+                        onClick={() =>
+                          setAccentColor(colorOption.id as AccentColor)
+                        }
+                        className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg transition-all ${
+                          accentColor === colorOption.id
+                            ? "bg-white/10 ring-2 ring-primary"
+                            : "hover:bg-white/5"
+                        }`}
+                        title={colorOption.description}
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-full transition-transform ${
+                            accentColor === colorOption.id
+                              ? "scale-110 ring-2 ring-white/30"
+                              : "group-hover:scale-105"
+                          }`}
+                          style={{ backgroundColor: colorOption.color }}
+                        />
+                        <span className="text-xs font-medium">
+                          {colorOption.name}
+                        </span>
+                        {accentColor === colorOption.id && (
+                          <Check className="absolute -top-1 -right-1 h-4 w-4 text-primary bg-background rounded-full" />
+                        )}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </Card>
@@ -426,51 +633,109 @@ export default function Settings() {
                     <Key className="h-5 w-5 text-primary" />
                     <h2 className="text-lg font-semibold">API Keys</h2>
                   </div>
+                  <p className="text-sm text-muted-foreground">
+                    Configure API keys for cloud providers. Keys are stored
+                    locally and never sent to third parties.
+                  </p>
 
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="mistralApiKey">Mistral API Key</Label>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <Input
-                            id="mistralApiKey"
-                            type={showMistralKey ? "text" : "password"}
-                            value={mistralApiKey}
-                            onChange={(e) => setMistralApiKey(e.target.value)}
-                            placeholder="Enter your Mistral API key"
-                            className="bg-background/50 pr-10 font-mono text-sm"
+                  <div className="space-y-6">
+                    {PROVIDERS.filter(
+                      (p) =>
+                        p.apiKeyField &&
+                        !p.isLocal &&
+                        !p.requiresCustomEndpoint,
+                    ).map((provider) => (
+                      <div key={provider.id} className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2 w-2 rounded-full ${provider.color}`}
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowMistralKey(!showMistralKey)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {showMistralKey ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </button>
+                          <Label htmlFor={provider.apiKeyField}>
+                            {provider.name} API Key
+                          </Label>
+                          {getApiKeyValue(provider.apiKeyField!) && (
+                            <span className="text-xs text-green-500 bg-green-500/10 px-2 py-0.5 rounded">
+                              Configured
+                            </span>
+                          )}
                         </div>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Input
+                              id={provider.apiKeyField}
+                              type={showKeys[provider.id] ? "text" : "password"}
+                              value={getApiKeyValue(provider.apiKeyField!)}
+                              onChange={(e) =>
+                                setApiKeyValue(
+                                  provider.apiKeyField!,
+                                  e.target.value,
+                                )
+                              }
+                              placeholder={provider.apiKeyPlaceholder}
+                              className="bg-background/50 pr-10 font-mono text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => toggleKeyVisibility(provider.id)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {showKeys[provider.id] ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            {provider.apiKeyHelpText}
+                          </p>
+                          {provider.apiKeyUrl && (
+                            <a
+                              href={provider.apiKeyUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                              Get API Key
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                        {provider.endpoint && (
+                          <p className="text-xs text-muted-foreground">
+                            Endpoint:{" "}
+                            <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs">
+                              {provider.endpoint}
+                            </code>
+                          </p>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Required for using Mistral models. Get your API key from{" "}
-                        <a
-                          href="https://console.mistral.ai/api-keys/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          console.mistral.ai
-                        </a>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Endpoint:{" "}
-                        <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs">
-                          https://api.mistral.ai/v1/chat/completions
-                        </code>
-                      </p>
-                    </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              {/* About Card */}
+              <Card className="glass-strong">
+                <div className="p-6">
+                  <h2 className="mb-4 text-lg font-semibold">About</h2>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>Continuum - AI for humans by VANTA Research</p>
+                    <p>Designed for clean, professional AI interactions.</p>
+                    <p className="mt-4">Version: 0.1.0</p>
+                    <p className="mt-4 text-xs">
+                      Icons by{" "}
+                      <a
+                        href="https://www.flaticon.com/uicons"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Flaticon
+                      </a>
+                    </p>
                   </div>
                 </div>
               </Card>

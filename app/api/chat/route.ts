@@ -7,12 +7,35 @@ const LLAMA_SERVER_URL =
   process.env.LLAMA_SERVER_URL || "http://localhost:8082";
 const OLLAMA_SERVER_URL =
   process.env.OLLAMA_SERVER_URL || "http://localhost:11434";
-const MISTRAL_API_URL =
-  process.env.MISTRAL_API_URL || "https://api.mistral.ai/v1/chat/completions";
+
+// API Endpoints
+const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+// Default model IDs
 const MISTRAL_MODEL_ID = process.env.MISTRAL_MODEL_ID || "mistral-large-latest";
+const OPENAI_MODEL_ID = process.env.OPENAI_MODEL_ID || "gpt-4o";
+const ANTHROPIC_MODEL_ID =
+  process.env.ANTHROPIC_MODEL_ID || "claude-sonnet-4-20250514";
+const OPENROUTER_MODEL_ID =
+  process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4";
+
+// Settings interface
+interface AppSettings {
+  mistralApiKey?: string;
+  openaiApiKey?: string;
+  anthropicApiKey?: string;
+  openrouterApiKey?: string;
+  customEndpointUrl?: string;
+  customEndpointApiKey?: string;
+  customEndpointModelId?: string;
+  hfToken?: string;
+}
 
 // Load settings from file to get API keys
-function loadSettings(): { mistralApiKey?: string; hfToken?: string } {
+function loadSettings(): AppSettings {
   try {
     const settingsPath = path.join(process.cwd(), "data", "settings.json");
     if (fs.existsSync(settingsPath)) {
@@ -25,10 +48,40 @@ function loadSettings(): { mistralApiKey?: string; hfToken?: string } {
   return {};
 }
 
-// Get Mistral API key from settings file or environment
+// Get API keys from settings file or environment
 function getMistralApiKey(): string | undefined {
   const settings = loadSettings();
   return settings.mistralApiKey || process.env.MISTRAL_API_KEY;
+}
+
+function getOpenAIApiKey(): string | undefined {
+  const settings = loadSettings();
+  return settings.openaiApiKey || process.env.OPENAI_API_KEY;
+}
+
+function getAnthropicApiKey(): string | undefined {
+  const settings = loadSettings();
+  return settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+}
+
+function getOpenRouterApiKey(): string | undefined {
+  const settings = loadSettings();
+  return settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
+}
+
+function getCustomEndpointConfig(): {
+  url?: string;
+  apiKey?: string;
+  modelId?: string;
+} {
+  const settings = loadSettings();
+  return {
+    url: settings.customEndpointUrl || process.env.CUSTOM_ENDPOINT_URL,
+    apiKey:
+      settings.customEndpointApiKey || process.env.CUSTOM_ENDPOINT_API_KEY,
+    modelId:
+      settings.customEndpointModelId || process.env.CUSTOM_ENDPOINT_MODEL_ID,
+  };
 }
 
 interface CompletionRequest {
@@ -530,6 +583,202 @@ async function streamMistralResponse(messages: ChatMessage[]) {
 }
 
 /**
+ * Stream response from OpenAI API
+ */
+async function streamOpenAIResponse(
+  messages: Array<{ role: string; content: string | object[] }>,
+) {
+  const apiKey = getOpenAIApiKey();
+
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI API key not configured. Please add your API key in Settings.",
+    );
+  }
+
+  const openaiResponse = await fetch(OPENAI_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL_ID,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 4096,
+      stream: true,
+    }),
+  });
+
+  if (!openaiResponse.ok) {
+    const errorText = await openaiResponse.text();
+    console.error("OpenAI API error:", openaiResponse.status, errorText);
+    throw new Error(
+      `OpenAI API returned ${openaiResponse.status}: ${errorText}`,
+    );
+  }
+
+  return openaiResponse.body;
+}
+
+/**
+ * Stream response from Anthropic API
+ * Note: Anthropic uses a different message format than OpenAI
+ */
+async function streamAnthropicResponse(
+  messages: Array<{ role: string; content: string | object[] }>,
+  systemPrompt: string,
+) {
+  const apiKey = getAnthropicApiKey();
+
+  if (!apiKey) {
+    throw new Error(
+      "Anthropic API key not configured. Please add your API key in Settings.",
+    );
+  }
+
+  // Anthropic requires system prompt separately and doesn't accept 'system' role in messages
+  // Filter out system messages and convert to Anthropic format
+  const anthropicMessages = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content:
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    }));
+
+  const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL_ID,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: anthropicMessages,
+      stream: true,
+    }),
+  });
+
+  if (!anthropicResponse.ok) {
+    const errorText = await anthropicResponse.text();
+    console.error("Anthropic API error:", anthropicResponse.status, errorText);
+    throw new Error(
+      `Anthropic API returned ${anthropicResponse.status}: ${errorText}`,
+    );
+  }
+
+  return anthropicResponse.body;
+}
+
+/**
+ * Stream response from OpenRouter API
+ * OpenRouter uses OpenAI-compatible format
+ */
+async function streamOpenRouterResponse(
+  messages: Array<{ role: string; content: string | object[] }>,
+) {
+  const apiKey = getOpenRouterApiKey();
+
+  if (!apiKey) {
+    throw new Error(
+      "OpenRouter API key not configured. Please add your API key in Settings.",
+    );
+  }
+
+  const openrouterResponse = await fetch(OPENROUTER_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://continuum.vanta.dev",
+      "X-Title": "Continuum",
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL_ID,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 4096,
+      stream: true,
+    }),
+  });
+
+  if (!openrouterResponse.ok) {
+    const errorText = await openrouterResponse.text();
+    console.error(
+      "OpenRouter API error:",
+      openrouterResponse.status,
+      errorText,
+    );
+    throw new Error(
+      `OpenRouter API returned ${openrouterResponse.status}: ${errorText}`,
+    );
+  }
+
+  return openrouterResponse.body;
+}
+
+/**
+ * Stream response from custom OpenAI-compatible endpoint
+ */
+async function streamCustomEndpointResponse(
+  messages: Array<{ role: string; content: string | object[] }>,
+) {
+  const config = getCustomEndpointConfig();
+
+  if (!config.url) {
+    throw new Error(
+      "Custom endpoint URL not configured. Please add the endpoint URL in Settings.",
+    );
+  }
+
+  if (!config.modelId) {
+    throw new Error(
+      "Custom endpoint model ID not configured. Please add the model ID in Settings.",
+    );
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // Only add Authorization header if API key is provided
+  if (config.apiKey) {
+    headers["Authorization"] = `Bearer ${config.apiKey}`;
+  }
+
+  const customResponse = await fetch(config.url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: config.modelId,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 4096,
+      stream: true,
+    }),
+  });
+
+  if (!customResponse.ok) {
+    const errorText = await customResponse.text();
+    console.error(
+      "Custom endpoint API error:",
+      customResponse.status,
+      errorText,
+    );
+    throw new Error(
+      `Custom endpoint returned ${customResponse.status}: ${errorText}`,
+    );
+  }
+
+  return customResponse.body;
+}
+
+/**
  * Detect which local server is available (Ollama or llama.cpp)
  */
 async function detectLocalServer(): Promise<"ollama" | "llamacpp" | null> {
@@ -968,60 +1217,61 @@ export async function POST(request: NextRequest) {
       systemPrompt += buildProjectToolInstructions();
     }
 
-    if (
+    // Build messages array with system prompt, history, and current message
+    const fullSystemPrompt = systemPrompt + memoryContext + webSearchContext;
+    const messages: ChatMessage[] = [
+      {
+        role: "system",
+        content: fullSystemPrompt,
+      },
+      // Include conversation history
+      ...conversationHistory,
+      // Add current user message
+      { role: "user", content: enhancedMessage },
+    ];
+
+    const hasImages = attachments?.some((a: FileAttachment) =>
+      a.type.startsWith("image/"),
+    );
+
+    if (hasImages) {
+      // Replace the last user message with image content
+      messages[messages.length - 1] = {
+        role: "user",
+        content:
+          attachments
+            ?.filter(
+              (a: FileAttachment) => a.type.startsWith("image/") && a.base64,
+            )
+            .map((a: FileAttachment) => ({
+              type: "image_url" as const,
+              image_url: { url: a.base64! },
+            })) || [],
+      };
+      messages.push({ role: "user", content: enhancedMessage });
+    }
+
+    // Route to the appropriate provider
+    if (model === "openai") {
+      streamBody = await streamOpenAIResponse(messages);
+    } else if (model === "anthropic") {
+      // Anthropic needs system prompt passed separately
+      streamBody = await streamAnthropicResponse(messages, fullSystemPrompt);
+      // Mark as Anthropic for different SSE parsing
+      (streamBody as any).__serverType = "anthropic";
+    } else if (model === "openrouter") {
+      streamBody = await streamOpenRouterResponse(messages);
+    } else if (model === "custom") {
+      streamBody = await streamCustomEndpointResponse(messages);
+    } else if (
       model === "atom-large-experimental" ||
       model === "loux-large-experimental" ||
       model === "mistral"
     ) {
-      // Build messages array with system prompt, history, and current message
-      const messages: ChatMessage[] = [
-        {
-          role: "system",
-          content: systemPrompt + memoryContext + webSearchContext,
-        },
-        // Include conversation history
-        ...conversationHistory,
-        // Add current user message
-        { role: "user", content: enhancedMessage },
-      ];
-
-      const hasImages = attachments?.some((a: FileAttachment) =>
-        a.type.startsWith("image/"),
-      );
-
-      if (hasImages) {
-        // Replace the last user message with image content
-        messages[messages.length - 1] = {
-          role: "user",
-          content:
-            attachments
-              ?.filter(
-                (a: FileAttachment) => a.type.startsWith("image/") && a.base64,
-              )
-              .map((a: FileAttachment) => ({
-                type: "image_url" as const,
-                image_url: { url: a.base64! },
-              })) || [],
-        };
-        messages.push({ role: "user", content: enhancedMessage });
-      }
-
       streamBody = await streamMistralResponse(messages);
     } else {
-      // Build messages array for local model (works with both Ollama and llama.cpp)
-      const localMessages: ChatMessage[] = [
-        {
-          role: "system",
-          content: systemPrompt + memoryContext + webSearchContext,
-        },
-        // Include conversation history
-        ...conversationHistory,
-        // Add current user message
-        { role: "user", content: enhancedMessage },
-      ];
-
-      // Auto-detect and use available local server (Ollama or llama.cpp)
-      const localResult = await streamLocalResponse(localMessages);
+      // Default: Local AI (atom) - works with both Ollama and llama.cpp
+      const localResult = await streamLocalResponse(messages);
       streamBody = localResult.body;
 
       // Store server type for response parsing
@@ -1064,11 +1314,59 @@ export async function POST(request: NextRequest) {
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
 
-            // Check if this is an Ollama response (different format)
-            const isOllama = (streamBody as any)?.__serverType === "ollama";
+            // Check response format based on server type
+            const serverType = (streamBody as any)?.__serverType;
+            const isOllama = serverType === "ollama";
+            const isAnthropic = serverType === "anthropic";
 
             // Handle different streaming formats
-            if (!isOllama) {
+            if (isAnthropic) {
+              // Anthropic SSE format
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                if (trimmed.startsWith("data: ")) {
+                  const data = trimmed.slice(6);
+                  if (data === "[DONE]") break;
+
+                  try {
+                    const parsed = JSON.parse(data);
+                    // Anthropic uses different event types
+                    if (parsed.type === "content_block_delta") {
+                      const content = parsed.delta?.text;
+                      if (content) {
+                        // If Loom is active, convert ADD_FILE markers
+                        if (loomEnabled && loomContext) {
+                          const converted = convertAddFileToCanvasEdit(
+                            content,
+                            inAddFile,
+                            addFileBuffer,
+                          );
+                          inAddFile = converted.inAddFile;
+                          addFileBuffer = converted.addFileBuffer;
+                          if (converted.content) {
+                            controller.enqueue(
+                              encoder.encode(
+                                `data: ${JSON.stringify({ choices: [{ delta: { content: converted.content } }] })}\n\n`,
+                              ),
+                            );
+                          }
+                        } else {
+                          controller.enqueue(
+                            encoder.encode(
+                              `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                            ),
+                          );
+                        }
+                      }
+                    }
+                  } catch {
+                    // Skip malformed JSON
+                  }
+                }
+              }
+            } else if (!isOllama) {
               // OpenAI-compatible format (llama.cpp, Mistral)
               for (const line of lines) {
                 const trimmed = line.trim();
