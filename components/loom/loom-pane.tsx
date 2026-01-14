@@ -7,7 +7,7 @@ import { useLoom } from "./loom-provider";
 import { LoomToolbar } from "./loom-toolbar";
 import { LoomEditor } from "./loom-editor";
 import { LoomPreview } from "./loom-preview";
-import { LoomFileSidebar } from "./loom-file-sidebar";
+import { FileTreeSidebar } from "./file-tree-sidebar";
 import { ModelTypingIndicator } from "./model-typing-indicator";
 import { PendingEditReview } from "./pending-edit-review";
 import { useProject } from "@/components/projects/project-provider";
@@ -96,7 +96,7 @@ export function LoomPane({
       )}
     >
       {/* File Sidebar */}
-      <LoomFileSidebar />
+      <FileTreeSidebar />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">

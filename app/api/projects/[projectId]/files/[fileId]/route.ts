@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import ProjectSystem from '@/lib/projects';
-import fs from 'fs';
+import { NextResponse } from "next/server";
+import ProjectSystem from "@/lib/projects";
+import fs from "fs";
 
 interface RouteParams {
   params: Promise<{ projectId: string; fileId: string }>;
@@ -19,8 +19,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     const fileInfo = projectSystem.getFile(projectId, fileId);
     if (!fileInfo) {
       return NextResponse.json(
-        { success: false, error: 'File not found' },
-        { status: 404 }
+        { success: false, error: "File not found" },
+        { status: 404 },
       );
     }
 
@@ -28,8 +28,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     const filePath = projectSystem.getFilePath(projectId, fileId);
     if (!filePath || !fs.existsSync(filePath)) {
       return NextResponse.json(
-        { success: false, error: 'File not found on disk' },
-        { status: 404 }
+        { success: false, error: "File not found on disk" },
+        { status: 404 },
       );
     }
 
@@ -38,43 +38,88 @@ export async function GET(request: Request, { params }: RouteParams) {
 
     return new NextResponse(fileBuffer, {
       headers: {
-        'Content-Type': fileInfo.type,
-        'Content-Disposition': `attachment; filename="${fileInfo.name}"`,
-        'Content-Length': fileInfo.size.toString(),
+        "Content-Type": fileInfo.type,
+        "Content-Disposition": `attachment; filename="${fileInfo.name}"`,
+        "Content-Length": fileInfo.size.toString(),
       },
     });
   } catch (error) {
-    console.error('File download error:', error);
+    console.error("File download error:", error);
     return NextResponse.json(
-      { success: false, error: 'Failed to download file' },
-      { status: 500 }
+      { success: false, error: "Failed to download file" },
+      { status: 500 },
     );
   }
 }
 
 /**
  * PATCH /api/projects/[projectId]/files/[fileId]
- * Update file content
+ * Update file content or move file to a different folder
+ *
+ * Body options:
+ * - { content: string } - Update file content
+ * - { action: "move", targetFolderPath: string } - Move file to folder (empty string = root)
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
     const { projectId, fileId } = await params;
-    const { content } = await request.json();
+    const body = await request.json();
 
-    if (typeof content !== 'string') {
+    const projectSystem = new ProjectSystem();
+
+    // Handle move action
+    if (body.action === "move") {
+      const { targetFolderPath } = body;
+
+      if (typeof targetFolderPath !== "string") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "targetFolderPath is required for move action",
+          },
+          { status: 400 },
+        );
+      }
+
+      const movedFile = projectSystem.moveFile(
+        projectId,
+        fileId,
+        targetFolderPath,
+      );
+
+      if (!movedFile) {
+        return NextResponse.json(
+          { success: false, error: "Failed to move file" },
+          { status: 404 },
+        );
+      }
+
+      // Return updated tree
+      const tree = projectSystem.buildFileTree(projectId);
+
+      return NextResponse.json({
+        success: true,
+        file: movedFile,
+        tree,
+      });
+    }
+
+    // Handle content update (existing behavior)
+    const { content } = body;
+
+    if (typeof content !== "string") {
       return NextResponse.json(
-        { success: false, error: 'Content is required' },
-        { status: 400 }
+        { success: false, error: "Content is required" },
+        { status: 400 },
       );
     }
 
-    const projectSystem = new ProjectSystem();
     const updated = projectSystem.updateFileContent(projectId, fileId, content);
 
     if (!updated) {
       return NextResponse.json(
-        { success: false, error: 'File not found' },
-        { status: 404 }
+        { success: false, error: "File not found" },
+        { status: 404 },
       );
     }
 
@@ -82,10 +127,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       success: true,
     });
   } catch (error) {
-    console.error('File update error:', error);
+    console.error("File update error:", error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update file' },
-      { status: 500 }
+      { success: false, error: "Failed to update file" },
+      { status: 500 },
     );
   }
 }
@@ -102,8 +147,8 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 
     if (!deleted) {
       return NextResponse.json(
-        { success: false, error: 'File not found' },
-        { status: 404 }
+        { success: false, error: "File not found" },
+        { status: 404 },
       );
     }
 
@@ -111,10 +156,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       success: true,
     });
   } catch (error) {
-    console.error('File delete error:', error);
+    console.error("File delete error:", error);
     return NextResponse.json(
-      { success: false, error: 'Failed to delete file' },
-      { status: 500 }
+      { success: false, error: "Failed to delete file" },
+      { status: 500 },
     );
   }
 }
