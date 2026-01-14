@@ -18,13 +18,19 @@ import {
   GitBranch,
   Plus,
   Minus,
+  MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useLoom } from "./loom-provider";
 import type { PendingEdit, DiffLine } from "@/lib/loom-types";
-import { computeDiff } from "@/lib/diff-utils";
+import {
+  computeDiff,
+  getDiffHunks,
+  formatHunkHeader,
+  type DiffHunk,
+} from "@/lib/diff-utils";
 
 // Error boundary to catch rendering errors in the diff view
 interface ErrorBoundaryProps {
@@ -185,15 +191,17 @@ function PendingEditCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(edit.newContent);
 
-  // Safely compute diff with error handling
-  const diff = useMemo(() => {
+  // Safely compute diff and hunks with error handling
+  const { diff, hunks } = useMemo(() => {
     try {
-      return computeDiff(edit.originalContent, edit.newContent);
+      const computedDiff = computeDiff(edit.originalContent, edit.newContent);
+      const computedHunks = getDiffHunks(computedDiff, 3);
+      return { diff: computedDiff, hunks: computedHunks };
     } catch (error) {
       console.error("Error computing diff:", error);
       // Return a fallback diff showing the new content as additions
       const newLines = edit.newContent.split("\n").slice(0, 20);
-      return {
+      const fallbackDiff = {
         lines: newLines.map((content, idx) => ({
           type: "added" as const,
           lineNumber: { old: null, new: idx + 1 },
@@ -202,6 +210,18 @@ function PendingEditCard({
         additions: edit.newContent.split("\n").length,
         deletions: edit.originalContent.split("\n").length,
         hasChanges: true,
+      };
+      return {
+        diff: fallbackDiff,
+        hunks: [
+          {
+            startLineOld: 1,
+            startLineNew: 1,
+            oldLineCount: edit.originalContent.split("\n").length,
+            newLineCount: newLines.length,
+            lines: fallbackDiff.lines,
+          },
+        ],
       };
     }
   }, [edit.originalContent, edit.newContent]);
@@ -236,7 +256,7 @@ function PendingEditCard({
           </button>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">
-              Line {edit.targetLine}
+              {hunks.length} change{hunks.length !== 1 ? "s" : ""}
             </span>
             <span className="text-muted-foreground">•</span>
             <DiffStats diff={diff} />
@@ -314,16 +334,12 @@ function PendingEditCard({
             </div>
           ) : (
             <DiffErrorBoundary>
-              <div className={isLargeEdit ? "max-h-48 overflow-y-auto" : ""}>
-                <DiffView
-                  lines={diff.lines}
-                  maxLines={isLargeEdit ? 50 : undefined}
-                />
-                {isLargeEdit && diff.lines.length > 50 && (
-                  <div className="text-xs text-muted-foreground text-center py-2 bg-muted/20">
-                    Showing first 50 of {diff.lines.length} changed lines
-                  </div>
-                )}
+              <div
+                className={
+                  isLargeEdit ? "max-h-64 overflow-y-auto" : "max-h-96"
+                }
+              >
+                <HunkDiffView hunks={hunks} />
               </div>
             </DiffErrorBoundary>
           )}
@@ -369,40 +385,52 @@ function DiffStats({ diff }: DiffStatsProps) {
   );
 }
 
-interface DiffViewProps {
-  lines: DiffLine[];
-  maxLines?: number;
+interface HunkDiffViewProps {
+  hunks: DiffHunk[];
 }
 
-function DiffView({ lines, maxLines }: DiffViewProps) {
-  if (lines.length === 0) {
+function HunkDiffView({ hunks }: HunkDiffViewProps) {
+  if (hunks.length === 0) {
     return (
       <div className="text-xs text-muted-foreground italic py-2">
-        No content to display
+        No changes to display
       </div>
     );
   }
 
-  // Limit lines displayed if maxLines is specified
-  const displayLines = maxLines ? lines.slice(0, maxLines) : lines;
-
   return (
     <div className="rounded-md border border-border/50 overflow-hidden bg-background/30">
-      <div className="overflow-y-auto max-h-64">
-        <table className="w-full text-xs font-mono table-fixed">
-          <colgroup>
-            <col className="w-10" />
-            <col className="w-10" />
-            <col className="w-4" />
-            <col />
-          </colgroup>
-          <tbody>
-            {displayLines.map((line, idx) => (
-              <DiffLineRow key={idx} line={line} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {hunks.map((hunk, hunkIdx) => (
+        <div key={hunkIdx}>
+          {/* Hunk header */}
+          <div className="px-3 py-1.5 bg-primary/10 border-b border-border/30 text-xs font-mono text-primary">
+            {formatHunkHeader(hunk)}
+          </div>
+
+          {/* Hunk separator between multiple hunks */}
+          {hunkIdx > 0 && (
+            <div className="px-3 py-1 bg-muted/20 border-y border-border/30 text-xs text-muted-foreground flex items-center gap-2">
+              <MoreHorizontal className="h-3 w-3" />
+              <span>...</span>
+            </div>
+          )}
+
+          {/* Hunk lines */}
+          <table className="w-full text-xs font-mono table-fixed">
+            <colgroup>
+              <col className="w-10" />
+              <col className="w-10" />
+              <col className="w-4" />
+              <col />
+            </colgroup>
+            <tbody>
+              {hunk.lines.map((line, lineIdx) => (
+                <DiffLineRow key={lineIdx} line={line} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }

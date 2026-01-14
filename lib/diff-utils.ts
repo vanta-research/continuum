@@ -5,6 +5,9 @@ import type { DiffLine, DiffResult } from "./loom-types";
  * Computes the differences between two strings, treating each line as a unit.
  */
 
+// Number of context lines to show around changes in collapsed view
+const CONTEXT_LINES = 3;
+
 /**
  * Compute the Longest Common Subsequence table for two arrays of lines.
  */
@@ -374,6 +377,223 @@ export function getDiffSummary(diff: DiffResult): string {
   }
 
   return parts.join(", ");
+}
+
+/**
+ * Represents a collapsed section of unchanged lines
+ */
+export interface CollapsedSection {
+  type: "collapsed";
+  lineCount: number;
+  startLineOld: number | null;
+  startLineNew: number | null;
+}
+
+/**
+ * A diff line that can be either a regular diff line or a collapsed section
+ */
+export type CollapsedDiffLine = DiffLine | CollapsedSection;
+
+/**
+ * Check if a line is a collapsed section
+ */
+export function isCollapsedSection(
+  line: CollapsedDiffLine,
+): line is CollapsedSection {
+  return (line as CollapsedSection).type === "collapsed";
+}
+
+/**
+ * Collapse unchanged lines in a diff, showing only changes with context.
+ * This creates a more compact view similar to `git diff -U3`.
+ *
+ * @param diff - The full diff result
+ * @param contextLines - Number of unchanged lines to show around changes (default: 3)
+ * @returns Array of diff lines with collapsed sections for unchanged regions
+ */
+export function collapseDiff(
+  diff: DiffResult,
+  contextLines: number = CONTEXT_LINES,
+): CollapsedDiffLine[] {
+  if (!diff.hasChanges || diff.lines.length === 0) {
+    return diff.lines;
+  }
+
+  const result: CollapsedDiffLine[] = [];
+  const lines = diff.lines;
+
+  // First pass: mark which lines are "near" a change
+  const nearChange: boolean[] = new Array(lines.length).fill(false);
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].type !== "unchanged") {
+      // Mark this line and surrounding context lines
+      for (
+        let j = Math.max(0, i - contextLines);
+        j <= Math.min(lines.length - 1, i + contextLines);
+        j++
+      ) {
+        nearChange[j] = true;
+      }
+    }
+  }
+
+  // Second pass: build collapsed diff
+  let i = 0;
+  while (i < lines.length) {
+    if (nearChange[i]) {
+      // This line should be shown
+      result.push(lines[i]);
+      i++;
+    } else {
+      // Start of a collapsed section - count consecutive unchanged lines not near changes
+      const startIdx = i;
+      let collapsedCount = 0;
+      const startLineOld = lines[i].lineNumber.old;
+      const startLineNew = lines[i].lineNumber.new;
+
+      while (i < lines.length && !nearChange[i]) {
+        collapsedCount++;
+        i++;
+      }
+
+      // Only collapse if there are more than 1 line to collapse
+      // (no point showing "... 1 unchanged line ...")
+      if (collapsedCount > 1) {
+        result.push({
+          type: "collapsed",
+          lineCount: collapsedCount,
+          startLineOld,
+          startLineNew,
+        });
+      } else {
+        // Just show the single line
+        result.push(lines[startIdx]);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Get hunks (groups of changes with context) from a diff.
+ * Each hunk contains the changes and surrounding context lines.
+ */
+export interface DiffHunk {
+  startLineOld: number;
+  startLineNew: number;
+  oldLineCount: number;
+  newLineCount: number;
+  lines: DiffLine[];
+}
+
+export function getDiffHunks(
+  diff: DiffResult,
+  contextLines: number = CONTEXT_LINES,
+): DiffHunk[] {
+  if (!diff.hasChanges || diff.lines.length === 0) {
+    return [];
+  }
+
+  const hunks: DiffHunk[] = [];
+  const lines = diff.lines;
+
+  // Find all change indices
+  const changeIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].type !== "unchanged") {
+      changeIndices.push(i);
+    }
+  }
+
+  if (changeIndices.length === 0) {
+    return [];
+  }
+
+  // Group changes that are close together into hunks
+  let hunkStart = Math.max(0, changeIndices[0] - contextLines);
+  let hunkEnd = Math.min(lines.length - 1, changeIndices[0] + contextLines);
+
+  for (let i = 1; i < changeIndices.length; i++) {
+    const changeStart = changeIndices[i] - contextLines;
+    const changeEnd = changeIndices[i] + contextLines;
+
+    if (changeStart <= hunkEnd + 1) {
+      // This change is close enough to merge with current hunk
+      hunkEnd = Math.min(lines.length - 1, changeEnd);
+    } else {
+      // Start a new hunk - first save the current one
+      hunks.push(createHunk(lines, hunkStart, hunkEnd));
+      hunkStart = Math.max(0, changeStart);
+      hunkEnd = Math.min(lines.length - 1, changeEnd);
+    }
+  }
+
+  // Don't forget the last hunk
+  hunks.push(createHunk(lines, hunkStart, hunkEnd));
+
+  return hunks;
+}
+
+function createHunk(
+  lines: DiffLine[],
+  startIdx: number,
+  endIdx: number,
+): DiffHunk {
+  const hunkLines = lines.slice(startIdx, endIdx + 1);
+
+  // Calculate line counts
+  let oldLineCount = 0;
+  let newLineCount = 0;
+  let startLineOld = 0;
+  let startLineNew = 0;
+
+  // Find the first line numbers
+  for (const line of hunkLines) {
+    if (line.lineNumber.old !== null && startLineOld === 0) {
+      startLineOld = line.lineNumber.old;
+    }
+    if (line.lineNumber.new !== null && startLineNew === 0) {
+      startLineNew = line.lineNumber.new;
+    }
+    if (startLineOld !== 0 && startLineNew !== 0) break;
+  }
+
+  // Count lines in each version
+  for (const line of hunkLines) {
+    if (line.type === "unchanged") {
+      oldLineCount++;
+      newLineCount++;
+    } else if (line.type === "removed") {
+      oldLineCount++;
+    } else if (line.type === "added") {
+      newLineCount++;
+    }
+  }
+
+  return {
+    startLineOld: startLineOld || 1,
+    startLineNew: startLineNew || 1,
+    oldLineCount,
+    newLineCount,
+    lines: hunkLines,
+  };
+}
+
+/**
+ * Format a hunk header like git diff: @@ -startOld,countOld +startNew,countNew @@
+ */
+export function formatHunkHeader(hunk: DiffHunk): string {
+  const oldPart =
+    hunk.oldLineCount === 1
+      ? `${hunk.startLineOld}`
+      : `${hunk.startLineOld},${hunk.oldLineCount}`;
+  const newPart =
+    hunk.newLineCount === 1
+      ? `${hunk.startLineNew}`
+      : `${hunk.startLineNew},${hunk.newLineCount}`;
+  return `@@ -${oldPart} +${newPart} @@`;
 }
 
 /**

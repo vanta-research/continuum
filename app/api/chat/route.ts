@@ -265,9 +265,114 @@ Done! character-outline.md has been saved to your workspace."
 `;
 }
 
+// Thresholds for switching to surgical edit mode
+const LARGE_DOC_LINE_THRESHOLD = 100;
+const LARGE_DOC_CHAR_THRESHOLD = 5000;
+
 function buildLoomInstructions(loomContext: LoomContext): string {
   const isEmpty = !loomContext.content || loomContext.content.trim() === "";
+  const content = loomContext.content || "";
+  const lineCount = content.split("\n").length;
+  const charCount = content.length;
 
+  // Determine if we should use surgical edit mode for large documents
+  const useSurgicalMode =
+    !isEmpty &&
+    (lineCount > LARGE_DOC_LINE_THRESHOLD ||
+      charCount > LARGE_DOC_CHAR_THRESHOLD);
+
+  if (useSurgicalMode) {
+    return buildSurgicalLoomInstructions(loomContext, lineCount);
+  }
+
+  return buildFullDocumentLoomInstructions(loomContext, isEmpty);
+}
+
+function buildSurgicalLoomInstructions(
+  loomContext: LoomContext,
+  lineCount: number,
+): string {
+  const content = loomContext.content || "";
+  const lines = content.split("\n");
+
+  // Create a condensed view: first 20 lines, then summary, then last 10 lines
+  const previewLines = 20;
+  const endLines = 10;
+
+  let documentPreview = "";
+  if (lineCount <= previewLines + endLines + 5) {
+    // Small enough to show everything
+    documentPreview = content;
+  } else {
+    const startSection = lines.slice(0, previewLines).join("\n");
+    const endSection = lines.slice(-endLines).join("\n");
+    const middleCount = lineCount - previewLines - endLines;
+    documentPreview = `${startSection}\n\n[... ${middleCount} lines omitted for brevity ...]\n\n${endSection}`;
+  }
+
+  return `
+
+## LOOM MODE ACTIVE - LARGE DOCUMENT (${lineCount} lines)
+The document is large, so use SURGICAL EDITS to save tokens and be precise.
+
+### SURGICAL EDIT FORMAT:
+Use [SURGICAL_EDIT] markers for targeted changes:
+
+[SURGICAL_EDIT]
+{
+  "operation": "replace",
+  "startLine": 45,
+  "endLine": 48,
+  "content": "new content for lines 45-48\\ncan span multiple lines"
+}
+[/SURGICAL_EDIT]
+
+### Operations:
+- **replace**: Replace lines startLine through endLine with new content
+- **insert**: Insert new content BEFORE startLine (existing lines shift down)
+- **delete**: Delete lines startLine through endLine
+
+### Multiple edits in one response:
+[SURGICAL_EDIT]
+[
+  {"operation": "replace", "startLine": 10, "endLine": 12, "content": "new text here"},
+  {"operation": "insert", "startLine": 25, "content": "inserted line"},
+  {"operation": "delete", "startLine": 30, "endLine": 32}
+]
+[/SURGICAL_EDIT]
+
+### Rules:
+- Line numbers are 1-indexed (first line is line 1)
+- Use \\n for newlines within content strings
+- Edits are applied bottom-to-top, so line numbers stay valid
+- Be precise with line numbers - check the document preview below
+
+### WHEN TO USE SURGICAL EDITS:
+- Modifying specific sections
+- Adding content at specific locations
+- Fixing typos or small changes
+- Any targeted edit
+
+### WHEN TO USE FULL REPLACEMENT (fallback):
+Only if rewriting most of the document. Use [ADD_FILE] with complete content.
+
+### DOCUMENT PREVIEW (${lineCount} lines total):
+\`\`\`
+${documentPreview}
+\`\`\`
+${loomContext.selectedText ? `\n**User has selected:** "${loomContext.selectedText}"` : ""}
+
+### RESPOND IN CHAT (not edit) WHEN:
+- User asks questions about the document
+- User asks for analysis or opinions
+- User hasn't explicitly requested changes
+`;
+}
+
+function buildFullDocumentLoomInstructions(
+  loomContext: LoomContext,
+  isEmpty: boolean,
+): string {
   return `
 
 ## LOOM MODE ACTIVE - DOCUMENT EDITOR

@@ -53,6 +53,12 @@ import {
   cleanAddFileMarkers,
 } from "@/lib/loom-utils";
 import { extractOriginalContent } from "@/lib/diff-utils";
+import {
+  parseSurgicalEdits,
+  applySurgicalEdits,
+  containsSurgicalEdits,
+  surgicalEditToPendingFormat,
+} from "@/lib/surgical-edit";
 import type { LoomDocument } from "@/lib/loom-types";
 import {
   ProjectProvider,
@@ -744,160 +750,272 @@ function ChatInterfaceInner() {
           fullResponse.substring(Math.max(0, fullResponse.length - 500)),
         );
 
-        // More flexible regex that handles markdown formatting around the markers
-        // The model sometimes wraps markers with --- or other markdown
-        const editMatch = fullResponse.match(
-          /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
-        );
+        // Track if we handled edits via surgical mode
+        let handledBySurgicalEdit = false;
 
-        console.log("[Loom Debug] editMatch found:", !!editMatch);
-        if (!editMatch) {
-          console.log("[Loom Debug] NO MATCH! Trying alternative patterns...");
-          // Try to find any CANVAS_EDIT markers at all
-          const hasStart = fullResponse.indexOf("[CANVAS_EDIT_START");
-          const hasEnd = fullResponse.indexOf("[CANVAS_EDIT_END]");
+        // Check for surgical edits first (for large documents)
+        if (containsSurgicalEdits(fullResponse)) {
+          console.log("[Loom Debug] Found SURGICAL_EDIT markers");
+          const surgicalEdits = parseSurgicalEdits(fullResponse);
           console.log(
-            "[Loom Debug] Start marker index:",
-            hasStart,
-            "End marker index:",
-            hasEnd,
+            "[Loom Debug] Parsed surgical edits count:",
+            surgicalEdits.length,
           );
-          if (hasStart !== -1 && hasEnd !== -1) {
-            console.log(
-              "[Loom Debug] Content between markers:",
-              fullResponse.substring(hasStart, hasEnd + 20),
-            );
+
+          if (surgicalEdits.length > 0) {
+            const currentDocContent = currentLoom.state.document?.content || "";
+
+            if (currentLoom.state.autoAcceptEdits) {
+              // Apply surgical edits directly
+              console.log(
+                "[Loom Debug] Auto-accept ON, applying surgical edits directly",
+              );
+              const result = applySurgicalEdits(
+                currentDocContent,
+                surgicalEdits,
+              );
+              if (result.success) {
+                currentLoom.updateContent(result.newContent);
+                console.log(
+                  "[Loom Debug] Applied",
+                  result.appliedEdits,
+                  "surgical edits",
+                );
+              } else {
+                console.error(
+                  "[Loom Debug] Surgical edit errors:",
+                  result.errors,
+                );
+              }
+
+              // Clean up chat message
+              const cleanedMessage = fullResponse
+                .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
+                .trim();
+              setSessions((prevSessions) => {
+                return prevSessions.map((s) =>
+                  s.id === currentSessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((msg) =>
+                          msg.id === assistantMessage.id
+                            ? {
+                                ...msg,
+                                content:
+                                  cleanedMessage ||
+                                  `Done! Applied ${result.appliedEdits} edit${result.appliedEdits !== 1 ? "s" : ""} to the document.`,
+                              }
+                            : msg,
+                        ),
+                      }
+                    : s,
+                );
+              });
+            } else {
+              // Queue surgical edits for review
+              console.log(
+                "[Loom Debug] Auto-accept OFF, queuing surgical edits for review",
+              );
+              for (const edit of surgicalEdits) {
+                const pending = surgicalEditToPendingFormat(
+                  edit,
+                  currentDocContent,
+                );
+                currentLoom.addPendingEdit(
+                  pending.targetLine,
+                  pending.originalContent,
+                  pending.newContent,
+                );
+              }
+
+              // Clean up chat message
+              const cleanedMessage = fullResponse
+                .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
+                .trim();
+              setSessions((prevSessions) => {
+                return prevSessions.map((s) =>
+                  s.id === currentSessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((msg) =>
+                          msg.id === assistantMessage.id
+                            ? {
+                                ...msg,
+                                content:
+                                  cleanedMessage ||
+                                  `I've prepared ${surgicalEdits.length} edit${surgicalEdits.length !== 1 ? "s" : ""} for your review. Check the Loom panel to accept or reject the changes.`,
+                              }
+                            : msg,
+                        ),
+                      }
+                    : s,
+                );
+              });
+            }
+            // Mark that we handled this via surgical edits
+            handledBySurgicalEdit = true;
           }
         }
-        if (editMatch) {
-          console.log("[Loom Debug] Target line:", editMatch[1]);
-          console.log(
-            "[Loom Debug] Edit content length:",
-            editMatch[2]?.length,
-          );
-          console.log(
-            "[Loom Debug] autoAcceptEdits:",
-            currentLoom.state.autoAcceptEdits,
-          );
-        }
 
-        if (editMatch) {
-          const targetLine = parseInt(editMatch[1], 10);
-          const editContent = editMatch[2].trim();
-          const currentDocContent = currentLoom.state.document?.content || "";
-
-          console.log("[Loom Debug] Processing edit:");
-          console.log("[Loom Debug] - targetLine:", targetLine);
-          console.log(
-            "[Loom Debug] - editContent preview:",
-            editContent.substring(0, 200),
-          );
-          console.log(
-            "[Loom Debug] - currentDocContent length:",
-            currentDocContent.length,
+        // Only process CANVAS_EDIT if we didn't already handle surgical edits
+        if (!handledBySurgicalEdit) {
+          // More flexible regex that handles markdown formatting around the markers
+          // The model sometimes wraps markers with --- or other markdown
+          const editMatch = fullResponse.match(
+            /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
           );
 
-          // Check if auto-accept is enabled (use current state, not stale)
-          if (currentLoom.state.autoAcceptEdits) {
-            // Apply edit directly to loom (existing behavior)
+          console.log("[Loom Debug] editMatch found:", !!editMatch);
+          if (!editMatch) {
             console.log(
-              "[Loom Debug] Auto-accept is ON, applying edit directly",
+              "[Loom Debug] NO MATCH! Trying alternative patterns...",
             );
-            const newContent = applyEditToDocument(
-              currentDocContent,
-              targetLine,
-              editContent,
-            );
+            // Try to find any CANVAS_EDIT markers at all
+            const hasStart = fullResponse.indexOf("[CANVAS_EDIT_START");
+            const hasEnd = fullResponse.indexOf("[CANVAS_EDIT_END]");
             console.log(
-              "[Loom Debug] New content length after apply:",
-              newContent.length,
+              "[Loom Debug] Start marker index:",
+              hasStart,
+              "End marker index:",
+              hasEnd,
             );
-            console.log(
-              "[Loom Debug] New content preview:",
-              newContent.substring(0, 200),
-            );
-            currentLoom.updateContent(newContent);
-            console.log("[Loom Debug] Content updated in Loom");
-
-            // Final cleanup of chat message
-            const cleanedMessage = cleanLoomMarkers(fullResponse);
-            setSessions((prevSessions) => {
-              return prevSessions.map((s) =>
-                s.id === currentSessionId
-                  ? {
-                      ...s,
-                      messages: s.messages.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? {
-                              ...msg,
-                              content:
-                                cleanedMessage ||
-                                "Done! I've updated the Loom for you.",
-                            }
-                          : msg,
-                      ),
-                    }
-                  : s,
+            if (hasStart !== -1 && hasEnd !== -1) {
+              console.log(
+                "[Loom Debug] Content between markers:",
+                fullResponse.substring(hasStart, hasEnd + 20),
               );
-            });
-          } else {
-            // Queue the edit for review (new diff-based workflow)
-            console.log(
-              "[Loom Debug] Auto-accept is OFF, queuing edit for review",
-            );
-            const editContentLines = editContent.split("\n").length;
-            const originalContent = extractOriginalContent(
-              currentDocContent,
-              targetLine,
-              editContentLines,
-            );
-
-            console.log("[Loom Debug] Creating pending edit:");
-            console.log("[Loom Debug] - editContentLines:", editContentLines);
-            console.log(
-              "[Loom Debug] - originalContent length:",
-              originalContent.length,
-            );
-            console.log(
-              "[Loom Debug] - originalContent preview:",
-              originalContent.substring(0, 100),
-            );
-
-            // Add to pending edits queue
-            currentLoom.addPendingEdit(
-              targetLine,
-              originalContent,
-              editContent,
-            );
-            console.log("[Loom Debug] Pending edit added to queue");
-            console.log(
-              "[Loom Debug] Current pending edits count:",
-              currentLoom.state.pendingEdits.length + 1,
-            );
-
-            // Update chat message to indicate pending review
-            const cleanedMessage = cleanLoomMarkers(fullResponse);
-            setSessions((prevSessions) => {
-              return prevSessions.map((s) =>
-                s.id === currentSessionId
-                  ? {
-                      ...s,
-                      messages: s.messages.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? {
-                              ...msg,
-                              content:
-                                cleanedMessage ||
-                                "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
-                            }
-                          : msg,
-                      ),
-                    }
-                  : s,
-              );
-            });
+            }
           }
-        }
+          if (editMatch) {
+            console.log("[Loom Debug] Target line:", editMatch[1]);
+            console.log(
+              "[Loom Debug] Edit content length:",
+              editMatch[2]?.length,
+            );
+            console.log(
+              "[Loom Debug] autoAcceptEdits:",
+              currentLoom.state.autoAcceptEdits,
+            );
+          }
+
+          if (editMatch) {
+            const targetLine = parseInt(editMatch[1], 10);
+            const editContent = editMatch[2].trim();
+            const currentDocContent = currentLoom.state.document?.content || "";
+
+            console.log("[Loom Debug] Processing edit:");
+            console.log("[Loom Debug] - targetLine:", targetLine);
+            console.log(
+              "[Loom Debug] - editContent preview:",
+              editContent.substring(0, 200),
+            );
+            console.log(
+              "[Loom Debug] - currentDocContent length:",
+              currentDocContent.length,
+            );
+
+            // Check if auto-accept is enabled (use current state, not stale)
+            if (currentLoom.state.autoAcceptEdits) {
+              // Apply edit directly to loom (existing behavior)
+              console.log(
+                "[Loom Debug] Auto-accept is ON, applying edit directly",
+              );
+              const newContent = applyEditToDocument(
+                currentDocContent,
+                targetLine,
+                editContent,
+              );
+              console.log(
+                "[Loom Debug] New content length after apply:",
+                newContent.length,
+              );
+              console.log(
+                "[Loom Debug] New content preview:",
+                newContent.substring(0, 200),
+              );
+              currentLoom.updateContent(newContent);
+              console.log("[Loom Debug] Content updated in Loom");
+
+              // Final cleanup of chat message
+              const cleanedMessage = cleanLoomMarkers(fullResponse);
+              setSessions((prevSessions) => {
+                return prevSessions.map((s) =>
+                  s.id === currentSessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((msg) =>
+                          msg.id === assistantMessage.id
+                            ? {
+                                ...msg,
+                                content:
+                                  cleanedMessage ||
+                                  "Done! I've updated the Loom for you.",
+                              }
+                            : msg,
+                        ),
+                      }
+                    : s,
+                );
+              });
+            } else {
+              // Queue the edit for review (new diff-based workflow)
+              console.log(
+                "[Loom Debug] Auto-accept is OFF, queuing edit for review",
+              );
+              const editContentLines = editContent.split("\n").length;
+              const originalContent = extractOriginalContent(
+                currentDocContent,
+                targetLine,
+                editContentLines,
+              );
+
+              console.log("[Loom Debug] Creating pending edit:");
+              console.log("[Loom Debug] - editContentLines:", editContentLines);
+              console.log(
+                "[Loom Debug] - originalContent length:",
+                originalContent.length,
+              );
+              console.log(
+                "[Loom Debug] - originalContent preview:",
+                originalContent.substring(0, 100),
+              );
+
+              // Add to pending edits queue
+              currentLoom.addPendingEdit(
+                targetLine,
+                originalContent,
+                editContent,
+              );
+              console.log("[Loom Debug] Pending edit added to queue");
+              console.log(
+                "[Loom Debug] Current pending edits count:",
+                currentLoom.state.pendingEdits.length + 1,
+              );
+
+              // Update chat message to indicate pending review
+              const cleanedMessage = cleanLoomMarkers(fullResponse);
+              setSessions((prevSessions) => {
+                return prevSessions.map((s) =>
+                  s.id === currentSessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((msg) =>
+                          msg.id === assistantMessage.id
+                            ? {
+                                ...msg,
+                                content:
+                                  cleanedMessage ||
+                                  "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
+                              }
+                            : msg,
+                        ),
+                      }
+                    : s,
+                );
+              });
+            }
+          }
+        } // End of !handledBySurgicalEdit block
       }
 
       // After streaming completes, check for project creation tool
