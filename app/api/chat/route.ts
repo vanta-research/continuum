@@ -706,6 +706,7 @@ async function streamAnthropicResponse(
  */
 async function streamOpenRouterResponse(
   messages: Array<{ role: string; content: string | object[] }>,
+  modelId?: string,
 ) {
   const apiKey = getOpenRouterApiKey();
 
@@ -724,7 +725,7 @@ async function streamOpenRouterResponse(
       "X-Title": "Continuum",
     },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL_ID,
+      model: modelId || OPENROUTER_MODEL_ID,
       messages: messages,
       temperature: 0.7,
       max_tokens: 4096,
@@ -1286,6 +1287,10 @@ export async function POST(request: NextRequest) {
       (streamBody as any).__serverType = "anthropic";
     } else if (model === "openrouter") {
       streamBody = await streamOpenRouterResponse(messages);
+    } else if (model.startsWith("openrouter:")) {
+      // Handle specific OpenRouter models
+      const modelId = model.replace("openrouter:", "");
+      streamBody = await streamOpenRouterResponse(messages, modelId);
     } else if (model === "custom") {
       streamBody = await streamCustomEndpointResponse(messages);
     } else if (

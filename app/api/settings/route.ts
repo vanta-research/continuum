@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+// Structure for an enabled model
+interface EnabledModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
 interface Settings {
   // Server configuration
   serverUrl: string;
@@ -23,6 +30,9 @@ interface Settings {
   customEndpointUrl: string;
   customEndpointApiKey: string;
   customEndpointModelId: string;
+
+  // User-selected models to show in dropdown
+  enabledModels: EnabledModel[];
 }
 
 const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
@@ -60,6 +70,7 @@ function loadSettings(): Settings {
     customEndpointUrl: "",
     customEndpointApiKey: "",
     customEndpointModelId: "",
+    enabledModels: [],
   };
 }
 
@@ -121,6 +132,7 @@ export async function POST(request: NextRequest) {
       customEndpointUrl,
       customEndpointApiKey,
       customEndpointModelId,
+      enabledModels,
     } = body;
 
     const settings = saveSettings({
@@ -137,6 +149,7 @@ export async function POST(request: NextRequest) {
       customEndpointUrl,
       customEndpointApiKey,
       customEndpointModelId,
+      enabledModels,
     });
 
     return NextResponse.json({

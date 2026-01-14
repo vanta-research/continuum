@@ -80,6 +80,10 @@ The Loom is Continuum's collaborative canvas. It's where you and AI write togeth
 
 **Native Markdown.** Write in Markdown, preview in real-time. Perfect for technical docs, blog posts, notes, fiction—anything where structure and prose intersect.
 
+**Export anywhere.** When you're ready to share, export your work to PDF, Markdown, or plain text. PDF exports include optional headers, footers, page numbers, and timestamps.
+
+**Drag and drop.** Pull files directly from your filesystem into the Loom. Images, documents, references—bring your materials into your thinking space.
+
 The Loom isn't a document editor with AI features. It's a collaboration space that happens to produce documents.
 
 ---
@@ -111,13 +115,17 @@ That shouldn't live on someone else's servers.
 
 Or connect to cloud APIs when you need more capability. The architecture supports both. The choice is always yours.
 
-### OpenAI API Integration
+### Multi-Provider Support
 
-Already have OpenAI API access? Use your API key directly in Continuum.
+Connect to the AI providers you already use. Continuum supports them all:
 
-- **GPT-4o and friends** — Access the latest OpenAI models with your key
-- **Straightforward setup** — Settings → OpenAI → paste your `sk-...` key
-- **No OAuth required** — Keys stay local to your machine
+- **OpenAI** — GPT-4o, GPT-4, GPT-3.5 and more
+- **Anthropic** — Claude 3.5 Sonnet, Claude 3 Opus, Haiku
+- **Mistral** — Mistral Large, Medium, Small
+- **OpenRouter** — Access 300+ models through one API
+- **Custom Endpoints** — Any OpenAI-compatible API
+
+**Model Selection:** Choose exactly which models appear in your dropdown. Settings → Model Selection lets you pick from all available models across your configured providers.
 
 **Your mind, your rules.**
 
@@ -198,10 +206,10 @@ GOOGLE_SEARCH_ENGINE_ID=your_engine_id
 ### In-App
 
 Everything else lives in Settings:
-- Model selection (local or cloud)
-- Temperature and token limits  
-- Accent color
-- API keys (stored locally)
+- **General Settings** — Model selection, temperature, token limits, accent color
+- **Model Selection** — Choose which models from each provider appear in your dropdown
+- **Download Models** — Browse and download GGUF models from HuggingFace for local use
+- **API Keys** — Configure keys for OpenAI, Anthropic, Mistral, OpenRouter (stored locally)
 
 ---
 
@@ -288,6 +296,10 @@ PATCH|DELETE    /api/projects/[id]/files/[fid]
 GET   /api/models/available                 # Browse HuggingFace
 GET   /api/models/local                     # List downloaded
 POST  /api/models/download                  # Download model
+GET   /api/models/openai                    # List OpenAI models
+GET   /api/models/anthropic                 # List Anthropic models
+GET   /api/models/mistral                   # List Mistral models
+GET   /api/models/openrouter                # List OpenRouter models
 ```
 
 </details>
@@ -306,11 +318,13 @@ POST  /api/models/download                  # Download model
 
 Continuum is the beginning.
 
+- [x] **Multi-provider support** — OpenAI, Anthropic, Mistral, OpenRouter
+- [x] **PDF Export** — Share your work with configurable formatting
+- [x] **Model Selection** — Curate your own model dropdown
 - [ ] **Voice** — Think out loud, literally
 - [ ] **Plugins** — Extend the workspace with custom tools
 - [ ] **Multiplayer** — Collaborative cognitive spaces
 - [ ] **Mobile** — Your workspace, everywhere
-- [ ] **More models** — Anthropic, OpenAI, Ollama
 
 The goal isn't to build features. It's to build the best possible space for human-AI thinking.
 

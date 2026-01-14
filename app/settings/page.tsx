@@ -16,6 +16,11 @@ import {
   Cpu,
   Cloud,
   ExternalLink,
+  Loader2,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  List,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -114,6 +119,21 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+// Enabled model type
+interface EnabledModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+// Available model from API
+interface AvailableModel {
+  id: string;
+  name: string;
+  provider: string;
+  description?: string;
+}
+
 function SettingsContent() {
   const [serverUrl, setServerUrl] = useState("http://localhost:8082");
   const [temperature, setTemperature] = useState([0.7]);
@@ -137,8 +157,23 @@ function SettingsContent() {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
   const [saveMessage, setSaveMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"general" | "models">("general");
+  const [activeTab, setActiveTab] = useState<
+    "general" | "models" | "model-selection"
+  >("general");
   const { accentColor, setAccentColor } = useAccentColor();
+
+  // Model selection state
+  const [enabledModels, setEnabledModels] = useState<EnabledModel[]>([]);
+  const [availableModels, setAvailableModels] = useState<
+    Record<string, AvailableModel[]>
+  >({});
+  const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Load settings on mount
   useEffect(() => {
@@ -178,6 +213,8 @@ function SettingsContent() {
               setCustomEndpointApiKey(data.settings.customEndpointApiKey);
             if (data.settings.customEndpointModelId)
               setCustomEndpointModelId(data.settings.customEndpointModelId);
+            if (data.settings.enabledModels)
+              setEnabledModels(data.settings.enabledModels);
           }
         }
       } catch (error) {
@@ -208,6 +245,7 @@ function SettingsContent() {
           customEndpointUrl,
           customEndpointApiKey,
           customEndpointModelId,
+          enabledModels,
         }),
       });
 
@@ -295,6 +333,92 @@ function SettingsContent() {
 
   const selectedProvider = PROVIDERS.find((p) => p.id === selectedModel);
 
+  // Fetch available models for a provider
+  const fetchModelsForProvider = async (providerId: string) => {
+    setLoadingModels((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      const response = await fetch(`/api/models/${providerId}`);
+      const data = await response.json();
+      if (data.success && data.models) {
+        setAvailableModels((prev) => ({ ...prev, [providerId]: data.models }));
+      }
+    } catch (error) {
+      console.error(`Error fetching ${providerId} models:`, error);
+    } finally {
+      setLoadingModels((prev) => ({ ...prev, [providerId]: false }));
+    }
+  };
+
+  // Toggle provider expansion and fetch models if needed
+  const toggleProviderExpanded = (providerId: string) => {
+    setExpandedProviders((prev) => {
+      const next = new Set(prev);
+      if (next.has(providerId)) {
+        next.delete(providerId);
+      } else {
+        next.add(providerId);
+        // Fetch models if not already loaded
+        if (!availableModels[providerId]) {
+          fetchModelsForProvider(providerId);
+        }
+      }
+      return next;
+    });
+  };
+
+  // Check if a model is enabled
+  const isModelEnabled = (modelId: string) => {
+    return enabledModels.some((m) => m.id === modelId);
+  };
+
+  // Toggle model enabled/disabled
+  const toggleModelEnabled = (model: AvailableModel) => {
+    setEnabledModels((prev) => {
+      const exists = prev.some((m) => m.id === model.id);
+      if (exists) {
+        return prev.filter((m) => m.id !== model.id);
+      } else {
+        return [
+          ...prev,
+          { id: model.id, name: model.name, provider: model.provider },
+        ];
+      }
+    });
+  };
+
+  // Filter models by search query
+  const filterModels = (models: AvailableModel[]) => {
+    if (!modelSearchQuery) return models;
+    const query = modelSearchQuery.toLowerCase();
+    return models.filter(
+      (m) =>
+        m.id.toLowerCase().includes(query) ||
+        m.name.toLowerCase().includes(query),
+    );
+  };
+
+  // Get provider color class
+  const getProviderColor = (providerId: string) => {
+    const provider = PROVIDERS.find((p) => p.id === providerId);
+    return provider?.color || "bg-zinc-500";
+  };
+
+  // Check if provider has API key configured
+  const hasApiKeyConfigured = (providerId: string) => {
+    switch (providerId) {
+      case "openai":
+        return !!openaiApiKey;
+      case "anthropic":
+        return !!anthropicApiKey;
+      case "mistral":
+        return !!mistralApiKey;
+      case "openrouter":
+        return !!openrouterApiKey;
+      default:
+        return false;
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-zinc-950/50">
       <header className="border-b border-border/50 glass-strong">
@@ -325,9 +449,9 @@ function SettingsContent() {
           )}
 
           <div className="flex gap-3">
-            {activeTab === "general" && (
+            {(activeTab === "general" || activeTab === "model-selection") && (
               <>
-                {selectedModel === "atom" && (
+                {activeTab === "general" && selectedModel === "atom" && (
                   <Button variant="outline" onClick={handleTestConnection}>
                     Test Connection
                   </Button>
@@ -356,6 +480,17 @@ function SettingsContent() {
             >
               <SettingsIcon className="h-4 w-4 inline mr-2" />
               General Settings
+            </button>
+            <button
+              onClick={() => setActiveTab("model-selection")}
+              className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === "model-selection"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <List className="h-4 w-4 inline mr-2" />
+              Model Selection
             </button>
             <button
               onClick={() => setActiveTab("models")}
@@ -741,6 +876,173 @@ function SettingsContent() {
                       >
                         Flaticon
                       </a>
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </>
+          ) : activeTab === "model-selection" ? (
+            <>
+              {/* Model Selection Card */}
+              <Card className="glass-strong">
+                <div className="p-6 space-y-6">
+                  <div>
+                    <h2 className="text-lg font-semibold">
+                      Select Models for Chat
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Choose which models appear in your chat dropdown. Only
+                      models from providers with configured API keys will be
+                      available.
+                    </p>
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search models..."
+                      value={modelSearchQuery}
+                      onChange={(e) => setModelSearchQuery(e.target.value)}
+                      className="pl-10 bg-background/50"
+                    />
+                  </div>
+
+                  {/* Selected models count */}
+                  {enabledModels.length > 0 && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <Check className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        {enabledModels.length} model
+                        {enabledModels.length !== 1 ? "s" : ""} selected
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto text-xs"
+                        onClick={() => setEnabledModels([])}
+                      >
+                        Clear all
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Provider sections */}
+                  <div className="space-y-3">
+                    {PROVIDERS.filter(
+                      (p) =>
+                        p.apiKeyField &&
+                        !p.isLocal &&
+                        !p.requiresCustomEndpoint,
+                    ).map((provider) => {
+                      const isConfigured = hasApiKeyConfigured(provider.id);
+                      const isExpanded = expandedProviders.has(provider.id);
+                      const models = availableModels[provider.id] || [];
+                      const filteredModels = filterModels(models);
+                      const isLoading = loadingModels[provider.id];
+                      const enabledCount = enabledModels.filter(
+                        (m) => m.provider === provider.id,
+                      ).length;
+
+                      return (
+                        <Card
+                          key={provider.id}
+                          className="bg-background/50 overflow-hidden"
+                        >
+                          <button
+                            onClick={() =>
+                              isConfigured &&
+                              toggleProviderExpanded(provider.id)
+                            }
+                            disabled={!isConfigured}
+                            className={`w-full p-4 flex items-center justify-between text-left transition-colors ${
+                              isConfigured
+                                ? "hover:bg-muted/50"
+                                : "opacity-50 cursor-not-allowed"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`h-3 w-3 rounded-full ${provider.color}`}
+                              />
+                              <div>
+                                <span className="font-medium">
+                                  {provider.name}
+                                </span>
+                                {!isConfigured && (
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    (API key not configured)
+                                  </span>
+                                )}
+                                {enabledCount > 0 && (
+                                  <span className="ml-2 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                                    {enabledCount} selected
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {isConfigured &&
+                              (isExpanded ? (
+                                <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                              ))}
+                          </button>
+
+                          {isExpanded && isConfigured && (
+                            <div className="border-t border-border/50 p-4">
+                              {isLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                  <span className="ml-2 text-sm text-muted-foreground">
+                                    Loading models...
+                                  </span>
+                                </div>
+                              ) : filteredModels.length === 0 ? (
+                                <div className="text-center py-8 text-muted-foreground text-sm">
+                                  {modelSearchQuery
+                                    ? "No models match your search"
+                                    : "No models available"}
+                                </div>
+                              ) : (
+                                <div className="space-y-1 max-h-80 overflow-y-auto">
+                                  {filteredModels.map((model, index) => (
+                                    <label
+                                      key={`${model.id}-${index}`}
+                                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isModelEnabled(model.id)}
+                                        onChange={() =>
+                                          toggleModelEnabled(model)
+                                        }
+                                        className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-sm truncate">
+                                          {model.name}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground truncate">
+                                          {model.id}
+                                        </div>
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+
+                  {/* Save reminder */}
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                    <p className="text-sm text-muted-foreground">
+                      Remember to click <strong>Save</strong> to apply your
+                      model selection to the chat dropdown.
                     </p>
                   </div>
                 </div>

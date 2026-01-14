@@ -371,6 +371,10 @@ function ChatInterfaceInner() {
   const [selectedModel, setSelectedModel] = useState("atom");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [enabledModels, setEnabledModels] = useState<
+    Array<{ id: string; name: string; provider: string }>
+  >([]);
+  const [loadingEnabledModels, setLoadingEnabledModels] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -380,6 +384,24 @@ function ChatInterfaceInner() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+
+  // Function to fetch enabled models from settings
+  const fetchEnabledModels = useCallback(async () => {
+    setLoadingEnabledModels(true);
+
+    try {
+      const response = await fetch("/api/settings");
+      const data = await response.json();
+
+      if (data.success && data.settings?.enabledModels) {
+        setEnabledModels(data.settings.enabledModels);
+      }
+    } catch (error) {
+      console.error("Failed to fetch enabled models:", error);
+    } finally {
+      setLoadingEnabledModels(false);
+    }
+  }, []);
 
   // Sync sessions from project when project loads
   useEffect(() => {
@@ -438,6 +460,11 @@ function ChatInterfaceInner() {
     const storedSession = sessionToStored(currentSession);
     saveSession(storedSession);
   }, [currentSession, projectState.activeProject, saveSession]);
+
+  // Fetch enabled models when component mounts
+  useEffect(() => {
+    fetchEnabledModels();
+  }, [fetchEnabledModels]);
 
   // Check if user is near the bottom of the scroll area
   const checkIfNearBottom = useCallback(() => {
@@ -1573,6 +1600,7 @@ function ChatInterfaceInner() {
                   <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Local models */}
                   <SelectItem value="atom">Atom (Local)</SelectItem>
                   <SelectItem value="atom-large-experimental">
                     Atom-Large-Experimental
@@ -1580,6 +1608,54 @@ function ChatInterfaceInner() {
                   <SelectItem value="loux-large-experimental">
                     Loux-Large-Experimental
                   </SelectItem>
+
+                  {/* User-selected models from settings */}
+                  {enabledModels.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-xs text-muted-foreground bg-muted/50">
+                        Your Models
+                      </div>
+                      {enabledModels.map((model) => (
+                        <SelectItem
+                          key={model.id}
+                          value={`${model.provider}:${model.id}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-xs px-1.5 py-0.5 rounded ${
+                                model.provider === "openai"
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : model.provider === "anthropic"
+                                    ? "bg-orange-500/20 text-orange-400"
+                                    : model.provider === "mistral"
+                                      ? "bg-blue-500/20 text-blue-400"
+                                      : model.provider === "openrouter"
+                                        ? "bg-purple-500/20 text-purple-400"
+                                        : "bg-zinc-500/20 text-zinc-400"
+                              }`}
+                            >
+                              {model.provider}
+                            </span>
+                            <span>{model.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Loading state */}
+                  {loadingEnabledModels && (
+                    <div className="px-2 py-1 text-xs text-muted-foreground">
+                      Loading models...
+                    </div>
+                  )}
+
+                  {/* Hint when no models selected */}
+                  {!loadingEnabledModels && enabledModels.length === 0 && (
+                    <div className="px-2 py-1 text-xs text-muted-foreground">
+                      Configure models in Settings
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
