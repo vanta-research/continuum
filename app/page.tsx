@@ -1598,15 +1598,15 @@ function ChatInterfaceInner() {
                               {!message.content && !message.attachments && (
                                 <div className="flex gap-1.5">
                                   <div
-                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                     style={{ animationDelay: "0ms" }}
                                   />
                                   <div
-                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                     style={{ animationDelay: "150ms" }}
                                   />
                                   <div
-                                    className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                    className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                     style={{ animationDelay: "300ms" }}
                                   />
                                 </div>
@@ -1811,15 +1811,15 @@ function ChatInterfaceInner() {
                             {!message.content && !message.attachments && (
                               <div className="flex gap-1.5">
                                 <div
-                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                   style={{ animationDelay: "0ms" }}
                                 />
                                 <div
-                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                   style={{ animationDelay: "150ms" }}
                                 />
                                 <div
-                                  className="h-2 w-2 animate-bounce rounded-full bg-purple-500"
+                                  className="h-2 w-2 animate-bounce rounded-full bg-primary"
                                   style={{ animationDelay: "300ms" }}
                                 />
                               </div>

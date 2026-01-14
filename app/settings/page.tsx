@@ -10,6 +10,7 @@ import {
   Key,
   Eye,
   EyeOff,
+  Palette,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,11 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import ModelDownloader from "@/components/model-downloader";
+import {
+  useAccentColor,
+  ACCENT_COLORS,
+  AccentColor,
+} from "@/components/accent-color-provider";
 
 export default function Settings() {
   const [serverUrl, setServerUrl] = useState("http://localhost:8082");
@@ -38,6 +44,7 @@ export default function Settings() {
   const [showMistralKey, setShowMistralKey] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"general" | "models">("general");
+  const { accentColor, setAccentColor } = useAccentColor();
 
   // Load settings on mount
   useEffect(() => {
@@ -318,6 +325,47 @@ export default function Settings() {
                           onCheckedChange={setStreamResponse}
                         />
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/50 pt-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Palette className="h-5 w-5 text-primary" />
+                      <h2 className="text-lg font-semibold">Accent Color</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Choose your preferred accent color for the interface
+                    </p>
+                    <div className="flex gap-3">
+                      {ACCENT_COLORS.map((colorOption) => (
+                        <button
+                          key={colorOption.id}
+                          onClick={() =>
+                            setAccentColor(colorOption.id as AccentColor)
+                          }
+                          className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg transition-all ${
+                            accentColor === colorOption.id
+                              ? "bg-white/10 ring-2 ring-primary"
+                              : "hover:bg-white/5"
+                          }`}
+                          title={colorOption.description}
+                        >
+                          <div
+                            className={`w-8 h-8 rounded-full transition-transform ${
+                              accentColor === colorOption.id
+                                ? "scale-110 ring-2 ring-white/30"
+                                : "group-hover:scale-105"
+                            }`}
+                            style={{ backgroundColor: colorOption.color }}
+                          />
+                          <span className="text-xs font-medium">
+                            {colorOption.name}
+                          </span>
+                          {accentColor === colorOption.id && (
+                            <Check className="absolute -top-1 -right-1 h-4 w-4 text-primary bg-background rounded-full" />
+                          )}
+                        </button>
+                      ))}
                     </div>
                   </div>
 

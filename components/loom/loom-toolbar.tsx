@@ -93,7 +93,7 @@ export function LoomToolbar({
       )}
     >
       <div className="flex items-center gap-3">
-        <FileText className="h-4 w-4 text-purple-400" />
+        <FileText className="h-4 w-4 text-primary" />
 
         {isEditingTitle ? (
           <div className="flex items-center gap-1">

@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { cn } from '@/lib/utils';
+import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { cn } from "@/lib/utils";
 
 interface CanvasPreviewProps {
   content: string;
@@ -13,16 +13,24 @@ interface CanvasPreviewProps {
 export function CanvasPreview({ content, className }: CanvasPreviewProps) {
   if (!content.trim()) {
     return (
-      <div className={cn('h-full w-full flex items-center justify-center p-8', className)}>
+      <div
+        className={cn(
+          "h-full w-full flex items-center justify-center p-8",
+          className,
+        )}
+      >
         <p className="text-muted-foreground text-sm italic">
-          No content yet. Switch to Edit mode to start writing, or ask the AI to help you draft something.
+          No content yet. Switch to Edit mode to start writing, or ask the AI to
+          help you draft something.
         </p>
       </div>
     );
   }
 
   return (
-    <div className={cn('canvas-preview h-full w-full overflow-auto', className)}>
+    <div
+      className={cn("canvas-preview h-full w-full overflow-auto", className)}
+    >
       <div className="prose prose-invert dark:prose-invert max-w-none p-6">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
@@ -68,24 +76,33 @@ export function CanvasPreview({ content, className }: CanvasPreviewProps) {
             li: ({ children }) => (
               <li className="text-foreground/90">{children}</li>
             ),
-            // Blockquote styling
+            // Blockquote styling - uses primary accent color
             blockquote: ({ children }) => (
-              <blockquote className="border-l-4 border-purple-500/50 pl-4 my-4 italic text-muted-foreground bg-purple-500/5 py-2 rounded-r">
+              <blockquote className="border-l-4 border-primary/50 pl-4 my-4 italic text-muted-foreground bg-primary/5 py-2 rounded-r">
                 {children}
               </blockquote>
             ),
-            // Code styling
+            // Code styling - uses primary accent color
             code: ({ className, children, ...props }) => {
               const isInline = !className;
               if (isInline) {
                 return (
-                  <code className="bg-muted/50 px-1.5 py-0.5 rounded text-sm font-mono text-purple-300" {...props}>
+                  <code
+                    className="bg-muted/50 px-1.5 py-0.5 rounded text-sm font-mono text-primary"
+                    {...props}
+                  >
                     {children}
                   </code>
                 );
               }
               return (
-                <code className={cn('block bg-muted/30 p-4 rounded-lg overflow-x-auto font-mono text-sm', className)} {...props}>
+                <code
+                  className={cn(
+                    "block bg-muted/30 p-4 rounded-lg overflow-x-auto font-mono text-sm",
+                    className,
+                  )}
+                  {...props}
+                >
                   {children}
                 </code>
               );
@@ -95,21 +112,19 @@ export function CanvasPreview({ content, className }: CanvasPreviewProps) {
                 {children}
               </pre>
             ),
-            // Link styling
+            // Link styling - uses primary accent color
             a: ({ href, children }) => (
               <a
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-purple-400 hover:text-purple-300 underline underline-offset-2 transition-colors"
+                className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
               >
                 {children}
               </a>
             ),
             // Horizontal rule
-            hr: () => (
-              <hr className="my-6 border-border/50" />
-            ),
+            hr: () => <hr className="my-6 border-border/50" />,
             // Table styling
             table: ({ children }) => (
               <div className="overflow-x-auto my-4">
@@ -133,7 +148,9 @@ export function CanvasPreview({ content, className }: CanvasPreviewProps) {
             ),
             // Strong and emphasis
             strong: ({ children }) => (
-              <strong className="font-semibold text-foreground">{children}</strong>
+              <strong className="font-semibold text-foreground">
+                {children}
+              </strong>
             ),
             em: ({ children }) => (
               <em className="italic text-foreground/90">{children}</em>

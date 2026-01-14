@@ -1,12 +1,18 @@
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useMemo } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
-import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from '@codemirror/view';
-import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { useCanvas } from './canvas-provider';
-import { cn } from '@/lib/utils';
+import React, { useCallback, useEffect, useMemo } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { markdown } from "@codemirror/lang-markdown";
+import {
+  EditorView,
+  Decoration,
+  DecorationSet,
+  ViewPlugin,
+  ViewUpdate,
+} from "@codemirror/view";
+import { StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
+import { useCanvas } from "./canvas-provider";
+import { cn } from "@/lib/utils";
 
 // State effect to update the model cursor line
 const setModelCursorLine = StateEffect.define<number | null>();
@@ -28,7 +34,7 @@ const modelCursorField = StateField.define<DecorationSet>({
           builder.add(
             lineInfo.from,
             lineInfo.from,
-            Decoration.line({ class: 'model-cursor-line' })
+            Decoration.line({ class: "model-cursor-line" }),
           );
           return builder.finish();
         } catch {
@@ -41,43 +47,77 @@ const modelCursorField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-// Custom theme for the canvas editor
+// One Dark theme for the canvas editor
 const canvasTheme = EditorView.theme({
-  '&': {
-    height: '100%',
-    fontSize: '14px',
+  "&": {
+    height: "100%",
+    fontSize: "14px",
+    backgroundColor: "#282c34",
   },
-  '.cm-scroller': {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    overflow: 'auto',
+  ".cm-scroller": {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    overflow: "auto",
   },
-  '.cm-content': {
-    padding: '16px 0',
+  ".cm-content": {
+    padding: "16px 0",
+    caretColor: "var(--accent-color, #61afef)",
   },
-  '.cm-line': {
-    padding: '0 16px',
+  ".cm-line": {
+    padding: "0 16px",
   },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: 'hsl(var(--muted-foreground) / 0.5)',
+  ".cm-gutters": {
+    backgroundColor: "#21252b",
+    border: "none",
+    color: "#495162",
   },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'hsl(var(--accent) / 0.3)',
+  ".cm-gutter.cm-lineNumbers .cm-gutterElement": {
+    color: "#495162",
   },
-  '.cm-activeLine': {
-    backgroundColor: 'hsl(var(--accent) / 0.1)',
+  ".cm-activeLineGutter": {
+    backgroundColor: "#2c313c",
+    color: "#abb2bf",
   },
-  '&.cm-focused .cm-cursor': {
-    borderLeftColor: 'hsl(var(--primary))',
+  ".cm-activeLine": {
+    backgroundColor: "#2c313c",
   },
-  '&.cm-focused .cm-selectionBackground, ::selection': {
-    backgroundColor: 'hsl(var(--primary) / 0.2)',
+  "&.cm-focused .cm-cursor": {
+    borderLeftColor: "var(--accent-color, #61afef)",
+    borderLeftWidth: "2px",
   },
-  '.model-cursor-line': {
-    backgroundColor: 'hsl(270 70% 60% / 0.15)',
-    borderLeft: '3px solid hsl(270 70% 60%)',
-    marginLeft: '-3px',
+  "&.cm-focused .cm-selectionBackground, ::selection": {
+    backgroundColor: "#3e4451",
+  },
+  ".cm-selectionBackground": {
+    backgroundColor: "#3e4451 !important",
+  },
+  // One Dark syntax highlighting
+  ".cm-keyword": { color: "#c678dd" },
+  ".cm-operator": { color: "#56b6c2" },
+  ".cm-variable": { color: "#e06c75" },
+  ".cm-variable-2": { color: "#e5c07b" },
+  ".cm-variable-3": { color: "#e5c07b" },
+  ".cm-builtin": { color: "#e5c07b" },
+  ".cm-atom": { color: "#d19a66" },
+  ".cm-number": { color: "#d19a66" },
+  ".cm-def": { color: "#61afef" },
+  ".cm-string": { color: "#98c379" },
+  ".cm-string-2": { color: "#98c379" },
+  ".cm-comment": { color: "#5c6370", fontStyle: "italic" },
+  ".cm-tag": { color: "#e06c75" },
+  ".cm-bracket": { color: "#abb2bf" },
+  ".cm-attribute": { color: "#d19a66" },
+  ".cm-hr": { color: "#5c6370" },
+  ".cm-link": { color: "#61afef" },
+  ".cm-header": { color: "#e06c75", fontWeight: "bold" },
+  ".cm-strong": { fontWeight: "bold", color: "#d19a66" },
+  ".cm-em": { fontStyle: "italic", color: "#c678dd" },
+  ".cm-quote": { color: "#5c6370", fontStyle: "italic" },
+  // Model cursor line - uses accent color
+  ".model-cursor-line": {
+    backgroundColor: "var(--accent-color-subtle, #61afef26)",
+    borderLeft: "3px solid var(--accent-color, #61afef)",
+    marginLeft: "-3px",
   },
 });
 
@@ -89,13 +129,13 @@ interface CanvasEditorProps {
 
 export function CanvasEditor({
   className,
-  placeholder = 'Start typing or ask the AI to help you draft...',
+  placeholder = "Start typing or ask the AI to help you draft...",
   readOnly = false,
 }: CanvasEditorProps) {
   const { state, updateContent, updateUserCursor } = useCanvas();
   const { document, modelCursor, modelEdit } = state;
 
-  const content = document?.content || '';
+  const content = document?.content || "";
 
   // Handle content changes from user typing
   const handleChange = useCallback(
@@ -104,7 +144,7 @@ export function CanvasEditor({
         updateContent(value);
       }
     },
-    [modelEdit.isEditing, updateContent]
+    [modelEdit.isEditing, updateContent],
   );
 
   // Track cursor position
@@ -119,7 +159,7 @@ export function CanvasEditor({
         });
       }
     },
-    [updateUserCursor]
+    [updateUserCursor],
   );
 
   // Create a plugin to dispatch model cursor updates
@@ -133,7 +173,10 @@ export function CanvasEditor({
           update(update: ViewUpdate) {
             const targetLine = modelCursor?.line ?? null;
             // Only schedule update if needed and not already pending
-            if ((update.docChanged || update.viewportChanged) && !this.pendingUpdate) {
+            if (
+              (update.docChanged || update.viewportChanged) &&
+              !this.pendingUpdate
+            ) {
               this.pendingUpdate = true;
               // Defer dispatch to next frame to avoid nested update error
               requestAnimationFrame(() => {
@@ -144,9 +187,9 @@ export function CanvasEditor({
               });
             }
           }
-        }
+        },
       ),
-    [modelCursor?.line]
+    [modelCursor?.line],
   );
 
   // Extensions for CodeMirror
@@ -159,7 +202,7 @@ export function CanvasEditor({
       EditorView.lineWrapping,
       EditorView.updateListener.of(handleUpdate),
     ],
-    [modelCursorPlugin, handleUpdate]
+    [modelCursorPlugin, handleUpdate],
   );
 
   // Effect to update model cursor decoration when it changes
@@ -168,7 +211,9 @@ export function CanvasEditor({
   }, [modelCursor?.line]);
 
   return (
-    <div className={cn('canvas-editor h-full w-full overflow-hidden', className)}>
+    <div
+      className={cn("canvas-editor h-full w-full overflow-hidden", className)}
+    >
       <CodeMirror
         value={content}
         onChange={handleChange}

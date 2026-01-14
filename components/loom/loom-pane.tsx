@@ -126,8 +126,8 @@ export function LoomPane({
               {/* Model edit preview overlay */}
               {modelEdit.isEditing && modelEdit.streamBuffer && (
                 <div className="absolute top-4 right-4 z-10 max-w-xs">
-                  <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 backdrop-blur-sm p-3">
-                    <div className="text-xs font-medium text-purple-400 mb-1">
+                  <div className="rounded-lg border border-primary/30 bg-primary/10 backdrop-blur-sm p-3">
+                    <div className="text-xs font-medium text-primary mb-1">
                       Incoming edit:
                     </div>
                     <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-32 overflow-auto">
@@ -140,8 +140,8 @@ export function LoomPane({
             </>
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center p-8">
-              <div className="rounded-full bg-purple-500/10 p-4 mb-4">
-                <FileText className="h-8 w-8 text-purple-400" />
+              <div className="rounded-full bg-primary/10 p-4 mb-4">
+                <FileText className="h-8 w-8 text-primary" />
               </div>
               <h3 className="text-lg font-semibold mb-2">No Document Open</h3>
               <p className="text-sm text-muted-foreground mb-4 max-w-xs">

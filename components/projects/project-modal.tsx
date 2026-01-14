@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { useProject } from './project-provider';
+import React, { useState } from "react";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useProject } from "./project-provider";
 
 interface ProjectModalProps {
-  mode: 'create' | 'edit';
+  mode: "create" | "edit";
   projectId?: string;
   initialName?: string;
   initialDescription?: string;
@@ -18,8 +18,8 @@ interface ProjectModalProps {
 export function ProjectModal({
   mode,
   projectId,
-  initialName = '',
-  initialDescription = '',
+  initialName = "",
+  initialDescription = "",
   onClose,
 }: ProjectModalProps) {
   const { createProject, updateProject } = useProject();
@@ -31,16 +31,16 @@ export function ProjectModal({
     e.preventDefault();
 
     if (!name.trim()) {
-      alert('Project name is required');
+      alert("Project name is required");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      if (mode === 'create') {
+      if (mode === "create") {
         await createProject(name.trim(), description.trim());
-      } else if (mode === 'edit' && projectId) {
+      } else if (mode === "edit" && projectId) {
         await updateProject(projectId, {
           name: name.trim(),
           description: description.trim(),
@@ -48,7 +48,7 @@ export function ProjectModal({
       }
       onClose();
     } catch (error) {
-      console.error('Failed to save project:', error);
+      console.error("Failed to save project:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -67,7 +67,7 @@ export function ProjectModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <h2 className="text-lg font-semibold">
-            {mode === 'create' ? 'Create New Project' : 'Edit Project'}
+            {mode === "create" ? "Create New Project" : "Edit Project"}
           </h2>
           <button
             onClick={onClose}
@@ -80,7 +80,10 @@ export function ProjectModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div className="space-y-2">
-            <label htmlFor="project-name" className="text-sm font-medium text-muted-foreground">
+            <label
+              htmlFor="project-name"
+              className="text-sm font-medium text-muted-foreground"
+            >
               Project Name
             </label>
             <Input
@@ -95,7 +98,10 @@ export function ProjectModal({
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="project-description" className="text-sm font-medium text-muted-foreground">
+            <label
+              htmlFor="project-description"
+              className="text-sm font-medium text-muted-foreground"
+            >
               Description (optional)
             </label>
             <Textarea
@@ -117,16 +123,12 @@ export function ProjectModal({
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || !name.trim()}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
+            <Button type="submit" disabled={isSubmitting || !name.trim()}>
               {isSubmitting
-                ? 'Saving...'
-                : mode === 'create'
-                ? 'Create Project'
-                : 'Save Changes'}
+                ? "Saving..."
+                : mode === "create"
+                  ? "Create Project"
+                  : "Save Changes"}
             </Button>
           </div>
         </form>

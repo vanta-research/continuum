@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
 import "./globals.css";
+import { AccentColorProvider } from "@/components/accent-color-provider";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -19,8 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${roboto.variable} antialiased`}>{children}</body>
+    <html lang="en" className="dark accent-blue">
+      <body className={`${roboto.variable} antialiased`}>
+        <AccentColorProvider>{children}</AccentColorProvider>
+      </body>
     </html>
   );
 }

@@ -1,18 +1,24 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { ChevronDown, Plus, FolderOpen, Trash2, Pencil } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useProject } from './project-provider';
-import { ProjectModal } from './project-modal';
+import React, { useState } from "react";
+import { ChevronDown, Plus, FolderOpen, Trash2, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useProject } from "./project-provider";
+import { ProjectModal } from "./project-modal";
 
 export function ProjectSwitcher() {
   const { state, switchProject, deleteProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingProject, setEditingProject] = useState<{ id: string; name: string; description: string } | null>(null);
+  const [editingProject, setEditingProject] = useState<{
+    id: string;
+    name: string;
+    description: string;
+  } | null>(null);
 
-  const currentProject = state.projects.find(p => p.id === state.activeProjectId);
+  const currentProject = state.projects.find(
+    (p) => p.id === state.activeProjectId,
+  );
 
   const handleProjectSelect = async (projectId: string) => {
     if (projectId !== state.activeProjectId) {
@@ -21,18 +27,28 @@ export function ProjectSwitcher() {
     setIsOpen(false);
   };
 
-  const handleDeleteProject = async (e: React.MouseEvent, projectId: string) => {
+  const handleDeleteProject = async (
+    e: React.MouseEvent,
+    projectId: string,
+  ) => {
     e.stopPropagation();
     if (state.projects.length <= 1) {
-      alert('Cannot delete the last project');
+      alert("Cannot delete the last project");
       return;
     }
-    if (confirm('Are you sure you want to delete this project? This cannot be undone.')) {
+    if (
+      confirm(
+        "Are you sure you want to delete this project? This cannot be undone.",
+      )
+    ) {
       await deleteProject(projectId);
     }
   };
 
-  const handleEditProject = (e: React.MouseEvent, project: typeof state.projects[0]) => {
+  const handleEditProject = (
+    e: React.MouseEvent,
+    project: (typeof state.projects)[0],
+  ) => {
     e.stopPropagation();
     setEditingProject({
       id: project.id,
@@ -60,11 +76,13 @@ export function ProjectSwitcher() {
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left"
       >
-        <FolderOpen className="h-4 w-4 text-purple-400 shrink-0" />
+        <FolderOpen className="h-4 w-4 text-primary shrink-0" />
         <span className="text-sm font-medium truncate flex-1">
-          {currentProject?.name || 'Select Project'}
+          {currentProject?.name || "Select Project"}
         </span>
-        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+        />
       </button>
 
       {/* Dropdown */}
@@ -85,12 +103,14 @@ export function ProjectSwitcher() {
                   key={project.id}
                   onClick={() => handleProjectSelect(project.id)}
                   className={`flex items-center gap-2 p-2 cursor-pointer hover:bg-white/5 transition-colors group ${
-                    project.id === state.activeProjectId ? 'bg-white/10' : ''
+                    project.id === state.activeProjectId ? "bg-white/10" : ""
                   }`}
                 >
-                  <FolderOpen className="h-4 w-4 text-purple-400/70 shrink-0" />
+                  <FolderOpen className="h-4 w-4 text-primary/70 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{project.name}</div>
+                    <div className="text-sm font-medium truncate">
+                      {project.name}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {project.sessionCount} chats, {project.fileCount} files
                     </div>
@@ -124,7 +144,7 @@ export function ProjectSwitcher() {
                   setIsOpen(false);
                   setShowCreateModal(true);
                 }}
-                className="w-full flex items-center gap-2 p-2 rounded hover:bg-white/5 transition-colors text-purple-400"
+                className="w-full flex items-center gap-2 p-2 rounded hover:bg-white/5 transition-colors text-primary"
               >
                 <Plus className="h-4 w-4" />
                 <span className="text-sm">New Project</span>
@@ -136,10 +156,7 @@ export function ProjectSwitcher() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <ProjectModal
-          mode="create"
-          onClose={() => setShowCreateModal(false)}
-        />
+        <ProjectModal mode="create" onClose={() => setShowCreateModal(false)} />
       )}
 
       {/* Edit Modal */}

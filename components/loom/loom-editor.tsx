@@ -1,12 +1,18 @@
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useMemo } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
-import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from '@codemirror/view';
-import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { useLoom } from './loom-provider';
-import { cn } from '@/lib/utils';
+import React, { useCallback, useEffect, useMemo } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { markdown } from "@codemirror/lang-markdown";
+import {
+  EditorView,
+  Decoration,
+  DecorationSet,
+  ViewPlugin,
+  ViewUpdate,
+} from "@codemirror/view";
+import { StateField, StateEffect, RangeSetBuilder } from "@codemirror/state";
+import { useLoom } from "./loom-provider";
+import { cn } from "@/lib/utils";
 
 // State effect to update the model cursor line
 const setModelCursorLine = StateEffect.define<number | null>();
@@ -28,7 +34,7 @@ const modelCursorField = StateField.define<DecorationSet>({
           builder.add(
             lineInfo.from,
             lineInfo.from,
-            Decoration.line({ class: 'model-cursor-line' })
+            Decoration.line({ class: "model-cursor-line" }),
           );
           return builder.finish();
         } catch {
@@ -41,43 +47,102 @@ const modelCursorField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-// Custom theme for the loom editor
+// One Dark theme colors - accent color comes from CSS variable
+const oneDark = {
+  background: "#282c34",
+  backgroundDarker: "#21252b",
+  foreground: "#abb2bf",
+  selection: "#3e4451",
+  comment: "#5c6370",
+  red: "#e06c75",
+  green: "#98c379",
+  yellow: "#e5c07b",
+  blue: "#61afef",
+  purple: "#c678dd",
+  cyan: "#56b6c2",
+  orange: "#d19a66",
+  gutter: "#4b5263",
+};
+
+// Custom theme for the loom editor - One Dark
 const loomTheme = EditorView.theme({
-  '&': {
-    height: '100%',
-    fontSize: '14px',
+  "&": {
+    height: "100%",
+    fontSize: "14px",
+    backgroundColor: oneDark.background,
+    color: oneDark.foreground,
   },
-  '.cm-scroller': {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    overflow: 'auto',
+  ".cm-scroller": {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    overflow: "auto",
   },
-  '.cm-content': {
-    padding: '16px 0',
+  ".cm-content": {
+    padding: "16px 0",
+    caretColor: "var(--accent-color, #61afef)",
   },
-  '.cm-line': {
-    padding: '0 16px',
+  ".cm-line": {
+    padding: "0 16px",
   },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: 'hsl(var(--muted-foreground) / 0.5)',
+  ".cm-gutters": {
+    backgroundColor: oneDark.backgroundDarker,
+    border: "none",
+    color: oneDark.gutter,
   },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'hsl(var(--accent) / 0.3)',
+  ".cm-gutter": {
+    backgroundColor: oneDark.backgroundDarker,
   },
-  '.cm-activeLine': {
-    backgroundColor: 'hsl(var(--accent) / 0.1)',
+  ".cm-lineNumbers .cm-gutterElement": {
+    color: oneDark.gutter,
   },
-  '&.cm-focused .cm-cursor': {
-    borderLeftColor: 'hsl(var(--primary))',
+  ".cm-activeLineGutter": {
+    backgroundColor: oneDark.selection,
+    color: oneDark.foreground,
   },
-  '&.cm-focused .cm-selectionBackground, ::selection': {
-    backgroundColor: 'hsl(var(--primary) / 0.2)',
+  ".cm-activeLine": {
+    backgroundColor: `${oneDark.selection}66`,
   },
-  '.model-cursor-line': {
-    backgroundColor: 'hsl(270 70% 60% / 0.15)',
-    borderLeft: '3px solid hsl(270 70% 60%)',
-    marginLeft: '-3px',
+  "&.cm-focused .cm-cursor": {
+    borderLeftColor: "var(--accent-color, #61afef)",
+    borderLeftWidth: "2px",
+  },
+  "&.cm-focused .cm-selectionBackground, ::selection": {
+    backgroundColor: oneDark.selection,
+  },
+  ".cm-selectionBackground": {
+    backgroundColor: oneDark.selection,
+  },
+  ".model-cursor-line": {
+    backgroundColor: "var(--accent-color-subtle, #61afef26)",
+    borderLeft: "3px solid var(--accent-color, #61afef)",
+    marginLeft: "-3px",
+  },
+  // Syntax highlighting overrides for One Dark
+  ".cm-keyword": { color: oneDark.purple },
+  ".cm-operator": { color: oneDark.cyan },
+  ".cm-variable": { color: oneDark.red },
+  ".cm-variable-2": { color: oneDark.orange },
+  ".cm-string": { color: oneDark.green },
+  ".cm-string-2": { color: oneDark.green },
+  ".cm-comment": { color: oneDark.comment, fontStyle: "italic" },
+  ".cm-number": { color: oneDark.orange },
+  ".cm-atom": { color: oneDark.orange },
+  ".cm-property": { color: oneDark.red },
+  ".cm-qualifier": { color: oneDark.yellow },
+  ".cm-tag": { color: oneDark.red },
+  ".cm-attribute": { color: oneDark.orange },
+  ".cm-link": { color: oneDark.cyan, textDecoration: "underline" },
+  ".cm-header": { color: oneDark.red, fontWeight: "bold" },
+  ".cm-strong": { color: oneDark.orange, fontWeight: "bold" },
+  ".cm-em": { color: oneDark.purple, fontStyle: "italic" },
+  // Markdown specific
+  ".cm-meta": { color: oneDark.comment },
+  ".cm-url": { color: oneDark.cyan },
+  // Matching brackets
+  ".cm-matchingBracket": {
+    backgroundColor: "var(--accent-color-subtle, #61afef26)",
+    color: oneDark.foreground,
+    outline: "1px solid var(--accent-color, #61afef)",
   },
 });
 
@@ -89,13 +154,13 @@ interface LoomEditorProps {
 
 export function LoomEditor({
   className,
-  placeholder = 'Start typing or ask the AI to help you draft...',
+  placeholder = "Start typing or ask the AI to help you draft...",
   readOnly = false,
 }: LoomEditorProps) {
   const { state, updateContent, updateUserCursor } = useLoom();
   const { document, modelCursor, modelEdit } = state;
 
-  const content = document?.content || '';
+  const content = document?.content || "";
 
   // Handle content changes from user typing
   const handleChange = useCallback(
@@ -104,7 +169,7 @@ export function LoomEditor({
         updateContent(value);
       }
     },
-    [modelEdit.isEditing, updateContent]
+    [modelEdit.isEditing, updateContent],
   );
 
   // Track cursor position
@@ -119,7 +184,7 @@ export function LoomEditor({
         });
       }
     },
-    [updateUserCursor]
+    [updateUserCursor],
   );
 
   // Create a plugin to dispatch model cursor updates
@@ -133,7 +198,10 @@ export function LoomEditor({
           update(update: ViewUpdate) {
             const targetLine = modelCursor?.line ?? null;
             // Only schedule update if needed and not already pending
-            if ((update.docChanged || update.viewportChanged) && !this.pendingUpdate) {
+            if (
+              (update.docChanged || update.viewportChanged) &&
+              !this.pendingUpdate
+            ) {
               this.pendingUpdate = true;
               // Defer dispatch to next frame to avoid nested update error
               requestAnimationFrame(() => {
@@ -144,9 +212,9 @@ export function LoomEditor({
               });
             }
           }
-        }
+        },
       ),
-    [modelCursor?.line]
+    [modelCursor?.line],
   );
 
   // Extensions for CodeMirror
@@ -159,7 +227,7 @@ export function LoomEditor({
       EditorView.lineWrapping,
       EditorView.updateListener.of(handleUpdate),
     ],
-    [modelCursorPlugin, handleUpdate]
+    [modelCursorPlugin, handleUpdate],
   );
 
   // Effect to update model cursor decoration when it changes
@@ -168,7 +236,7 @@ export function LoomEditor({
   }, [modelCursor?.line]);
 
   return (
-    <div className={cn('loom-editor h-full w-full overflow-hidden', className)}>
+    <div className={cn("loom-editor h-full w-full overflow-hidden", className)}>
       <CodeMirror
         value={content}
         onChange={handleChange}
