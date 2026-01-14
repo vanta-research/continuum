@@ -382,11 +382,21 @@ export function LoomToolbar({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Tip about browser headers */}
+            <div className="rounded-md bg-muted/50 border border-border/50 px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Tip:</span> To
+                hide the browser&apos;s URL and title in the PDF, uncheck
+                &quot;Headers and footers&quot; in the print dialog (under More
+                settings).
+              </p>
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <label className="text-sm font-medium">Page Numbers</label>
                 <p className="text-xs text-muted-foreground">
-                  Show page numbers in the footer
+                  Add page numbers to footer
                 </p>
               </div>
               <Switch
@@ -403,7 +413,7 @@ export function LoomToolbar({
               <div className="space-y-0.5">
                 <label className="text-sm font-medium">Date</label>
                 <p className="text-xs text-muted-foreground">
-                  Show export date in the footer
+                  Add export date to footer
                 </p>
               </div>
               <Switch
