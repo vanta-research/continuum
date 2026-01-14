@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const LLAMA_SERVER_URL =
+  process.env.LLAMA_SERVER_URL || "http://localhost:8082";
+const OLLAMA_SERVER_URL =
+  process.env.OLLAMA_SERVER_URL || "http://localhost:11434";
+
+interface OllamaModel {
+  name: string;
+  model: string;
+  modified_at: string;
+  size: number;
+}
+
+interface OllamaTagsResponse {
+  models: OllamaModel[];
+}
+
 interface LlamaCppHealth {
   status: string;
   slots_idle?: number;
@@ -22,27 +38,56 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { serverUrl } = body;
 
-    if (!serverUrl) {
-      return NextResponse.json(
-        { error: "Server URL is required" },
-        { status: 400 },
-      );
-    }
-
-    // Clean up the URL (remove trailing slash)
-    const baseUrl = serverUrl.replace(/\/+$/, "");
-
-    // Try multiple endpoints to determine server status
+    // Results object to track what we find
     const results = {
-      health: false,
-      models: false,
-      modelLoaded: false,
-      modelName: null as string | null,
-      slotsAvailable: 0,
-      error: null as string | null,
+      ollama: {
+        connected: false,
+        models: [] as string[],
+        error: null as string | null,
+      },
+      llamacpp: {
+        connected: false,
+        modelLoaded: false,
+        modelName: null as string | null,
+        slotsAvailable: 0,
+        error: null as string | null,
+      },
     };
 
-    // 1. Check /health endpoint (llama.cpp native)
+    // 1. Check Ollama (always check default port)
+    try {
+      const ollamaResponse = await fetch(`${OLLAMA_SERVER_URL}/api/tags`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (ollamaResponse.ok) {
+        results.ollama.connected = true;
+        try {
+          const data: OllamaTagsResponse = await ollamaResponse.json();
+          results.ollama.models = data.models?.map((m) => m.name) || [];
+        } catch {
+          // Connected but couldn't parse models
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes("ECONNREFUSED")) {
+          results.ollama.error = "Ollama not running";
+        } else if (
+          error.message.includes("timeout") ||
+          error.name === "TimeoutError"
+        ) {
+          results.ollama.error = "Ollama connection timed out";
+        }
+      }
+    }
+
+    // 2. Check llama.cpp (use provided serverUrl or default)
+    const llamaUrl = serverUrl || LLAMA_SERVER_URL;
+    const baseUrl = llamaUrl.replace(/\/+$/, "");
+
+    // Try /health endpoint
     try {
       const healthResponse = await fetch(`${baseUrl}/health`, {
         method: "GET",
@@ -50,138 +95,147 @@ export async function POST(request: NextRequest) {
       });
 
       if (healthResponse.ok) {
-        results.health = true;
+        results.llamacpp.connected = true;
         try {
           const healthData: LlamaCppHealth = await healthResponse.json();
           if (healthData.slots_idle !== undefined) {
-            results.slotsAvailable = healthData.slots_idle;
+            results.llamacpp.slotsAvailable = healthData.slots_idle;
           }
-          // Check if model is loaded based on status
           if (
             healthData.status === "ok" ||
             healthData.status === "no slot available"
           ) {
-            results.modelLoaded = true;
+            results.llamacpp.modelLoaded = true;
           }
         } catch {
           // Health endpoint returned OK but not JSON - still healthy
-          results.modelLoaded = true;
+          results.llamacpp.modelLoaded = true;
         }
       }
     } catch (error) {
-      // Health check failed, try other endpoints
-      console.log("Health endpoint not available:", error);
+      if (error instanceof Error) {
+        if (error.message.includes("ECONNREFUSED")) {
+          results.llamacpp.error = "llama.cpp server not running";
+        } else if (
+          error.message.includes("timeout") ||
+          error.name === "TimeoutError"
+        ) {
+          results.llamacpp.error = "llama.cpp connection timed out";
+        }
+      }
     }
 
-    // 2. Check /v1/models endpoint (OpenAI-compatible)
-    try {
-      const modelsResponse = await fetch(`${baseUrl}/v1/models`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
+    // Try /v1/models endpoint for model info
+    if (results.llamacpp.connected) {
+      try {
+        const modelsResponse = await fetch(`${baseUrl}/v1/models`, {
+          method: "GET",
+          signal: AbortSignal.timeout(5000),
+        });
 
-      if (modelsResponse.ok) {
-        results.models = true;
-        try {
+        if (modelsResponse.ok) {
           const modelsData: LlamaCppModelsResponse =
             await modelsResponse.json();
           if (modelsData.data && modelsData.data.length > 0) {
-            results.modelLoaded = true;
-            results.modelName = modelsData.data[0].id;
-          }
-        } catch {
-          // Models endpoint returned OK but couldn't parse
-        }
-      }
-    } catch (error) {
-      console.log("Models endpoint not available:", error);
-    }
-
-    // 3. If basic checks passed but no model info, try a minimal completion
-    if (results.health && !results.modelLoaded) {
-      try {
-        const testResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [{ role: "user", content: "hi" }],
-            max_tokens: 1,
-            stream: false,
-          }),
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (testResponse.ok) {
-          results.modelLoaded = true;
-        } else {
-          const errorText = await testResponse.text();
-          if (errorText.includes("loading") || errorText.includes("Loading")) {
-            results.error = "Model is still loading. Please wait...";
+            results.llamacpp.modelLoaded = true;
+            results.llamacpp.modelName = modelsData.data[0].id;
           }
         }
-      } catch (error) {
-        console.log("Test completion failed:", error);
+      } catch {
+        // Models endpoint not available, that's fine
       }
     }
 
-    // Determine overall connection status
-    if (results.health || results.models) {
-      if (results.modelLoaded) {
-        return NextResponse.json({
-          connected: true,
-          message: results.modelName
-            ? `Connected to llama.cpp server. Model: ${results.modelName}`
-            : "Connected to llama.cpp server. Model loaded.",
-          details: {
-            modelName: results.modelName,
-            slotsAvailable: results.slotsAvailable,
-          },
-        });
-      } else {
-        return NextResponse.json({
-          connected: true,
-          message:
-            results.error ||
-            "Connected to llama.cpp server, but no model is loaded. Start the server with a model file.",
-          modelLoaded: false,
-          details: {
-            slotsAvailable: results.slotsAvailable,
-          },
-        });
+    // Determine overall status and response
+    const ollamaAvailable =
+      results.ollama.connected && results.ollama.models.length > 0;
+    const llamacppAvailable =
+      results.llamacpp.connected && results.llamacpp.modelLoaded;
+
+    if (ollamaAvailable || llamacppAvailable) {
+      // At least one server is available
+      let message = "";
+      const details: Record<string, unknown> = {};
+
+      if (ollamaAvailable) {
+        message = `Ollama connected with ${results.ollama.models.length} model(s)`;
+        details.ollama = {
+          models: results.ollama.models.slice(0, 5), // First 5 models
+          totalModels: results.ollama.models.length,
+        };
+        details.serverType = "ollama";
+        details.recommended = results.ollama.models[0];
       }
+
+      if (llamacppAvailable) {
+        if (message) {
+          message += ". ";
+        }
+        message += results.llamacpp.modelName
+          ? `llama.cpp connected with model: ${results.llamacpp.modelName}`
+          : "llama.cpp connected and ready";
+        details.llamacpp = {
+          modelName: results.llamacpp.modelName,
+          slotsAvailable: results.llamacpp.slotsAvailable,
+        };
+        if (!ollamaAvailable) {
+          details.serverType = "llamacpp";
+        }
+      }
+
+      return NextResponse.json({
+        connected: true,
+        message,
+        modelLoaded: true,
+        details,
+      });
     }
 
-    // All checks failed
+    // Check if servers are running but no models
+    if (results.ollama.connected && results.ollama.models.length === 0) {
+      return NextResponse.json({
+        connected: true,
+        message:
+          'Ollama is running but no models installed. Run "ollama pull llama3.1:8b" to download a model.',
+        modelLoaded: false,
+        details: { serverType: "ollama" },
+      });
+    }
+
+    if (results.llamacpp.connected && !results.llamacpp.modelLoaded) {
+      return NextResponse.json({
+        connected: true,
+        message:
+          "llama.cpp server is running but no model is loaded. Start the server with a model file.",
+        modelLoaded: false,
+        details: { serverType: "llamacpp" },
+      });
+    }
+
+    // Nothing connected
+    let errorMessage =
+      "No local AI server found.\n\n" +
+      "Option 1 (Recommended): Start Ollama\n" +
+      "  $ ollama serve\n" +
+      "  $ ollama pull llama3.1:8b\n\n" +
+      "Option 2: Start llama.cpp\n" +
+      "  $ llama-server --model your-model.gguf --port 8082";
+
     return NextResponse.json({
       connected: false,
-      error:
-        "Could not connect to llama.cpp server. Make sure the server is running.",
+      error: errorMessage,
+      details: {
+        ollamaError: results.ollama.error,
+        llamacppError: results.llamacpp.error,
+      },
     });
   } catch (error) {
     console.error("Test connection error:", error);
 
-    let errorMessage = "Failed to connect to llama.cpp server";
-    if (error instanceof Error) {
-      if (error.message.includes("ECONNREFUSED")) {
-        errorMessage =
-          "Connection refused. Make sure llama.cpp server is running on the specified URL.";
-      } else if (
-        error.message.includes("timeout") ||
-        error.name === "TimeoutError"
-      ) {
-        errorMessage =
-          "Connection timed out. The server may be starting up or unreachable.";
-      } else if (error.message.includes("ENOTFOUND")) {
-        errorMessage = "Server not found. Check the URL is correct.";
-      }
-    }
-
     return NextResponse.json(
       {
         connected: false,
-        error: errorMessage,
+        error: "Failed to test connection",
       },
       { status: 503 },
     );

@@ -5,6 +5,8 @@ import fs from "fs";
 
 const LLAMA_SERVER_URL =
   process.env.LLAMA_SERVER_URL || "http://localhost:8082";
+const OLLAMA_SERVER_URL =
+  process.env.OLLAMA_SERVER_URL || "http://localhost:11434";
 const MISTRAL_API_URL =
   process.env.MISTRAL_API_URL || "https://api.mistral.ai/v1/chat/completions";
 const MISTRAL_MODEL_ID = process.env.MISTRAL_MODEL_ID || "mistral-large-latest";
@@ -528,6 +530,75 @@ async function streamMistralResponse(messages: ChatMessage[]) {
 }
 
 /**
+ * Detect which local server is available (Ollama or llama.cpp)
+ */
+async function detectLocalServer(): Promise<"ollama" | "llamacpp" | null> {
+  // Try Ollama first (more common, easier setup)
+  try {
+    const ollamaResponse = await fetch(`${OLLAMA_SERVER_URL}/api/tags`, {
+      method: "GET",
+      signal: AbortSignal.timeout(2000),
+    });
+    if (ollamaResponse.ok) {
+      console.log("[LocalAI] Detected Ollama server");
+      return "ollama";
+    }
+  } catch {
+    // Ollama not available
+  }
+
+  // Try llama.cpp
+  try {
+    const llamaResponse = await fetch(`${LLAMA_SERVER_URL}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(2000),
+    });
+    if (llamaResponse.ok) {
+      console.log("[LocalAI] Detected llama.cpp server");
+      return "llamacpp";
+    }
+  } catch {
+    // llama.cpp not available
+  }
+
+  return null;
+}
+
+/**
+ * Stream response from Ollama API
+ */
+async function streamOllamaResponse(
+  messages: Array<{ role: string; content: string }>,
+  model: string = "llama3.1:8b",
+  temperature: number = 0.7,
+) {
+  const chatRequest = {
+    model,
+    messages,
+    stream: true,
+    options: {
+      temperature,
+    },
+  };
+
+  const response = await fetch(`${OLLAMA_SERVER_URL}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(chatRequest),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Ollama API error:", response.status, errorText);
+    throw new Error(`Ollama API returned ${response.status}: ${errorText}`);
+  }
+
+  return response.body;
+}
+
+/**
  * Stream response from llama.cpp server using OpenAI-compatible API
  * llama.cpp exposes /v1/chat/completions which follows the OpenAI format
  */
@@ -572,6 +643,37 @@ async function streamLlamaResponse(
   }
 
   return response.body;
+}
+
+/**
+ * Stream response from local AI server (auto-detects Ollama or llama.cpp)
+ */
+async function streamLocalResponse(
+  messages: Array<{ role: string; content: string }>,
+  temperature: number = 0.7,
+  maxTokens: number = 4096,
+  ollamaModel: string = "llama3.1:8b",
+): Promise<{
+  body: ReadableStream<Uint8Array> | null;
+  serverType: "ollama" | "llamacpp";
+}> {
+  const serverType = await detectLocalServer();
+
+  if (!serverType) {
+    throw new Error(
+      "No local AI server found. Please start Ollama (recommended) or llama.cpp server.\n\n" +
+        "To start Ollama: ollama serve\n" +
+        "To start llama.cpp: llama-server --model your-model.gguf --port 8082",
+    );
+  }
+
+  if (serverType === "ollama") {
+    const body = await streamOllamaResponse(messages, ollamaModel, temperature);
+    return { body, serverType };
+  } else {
+    const body = await streamLlamaResponse(messages, temperature, maxTokens);
+    return { body, serverType };
+  }
 }
 
 /**
@@ -906,8 +1008,8 @@ export async function POST(request: NextRequest) {
 
       streamBody = await streamMistralResponse(messages);
     } else {
-      // Build messages array for local llama.cpp model (OpenAI-compatible format)
-      const llamaMessages: ChatMessage[] = [
+      // Build messages array for local model (works with both Ollama and llama.cpp)
+      const localMessages: ChatMessage[] = [
         {
           role: "system",
           content: systemPrompt + memoryContext + webSearchContext,
@@ -918,7 +1020,12 @@ export async function POST(request: NextRequest) {
         { role: "user", content: enhancedMessage },
       ];
 
-      streamBody = await streamLlamaResponse(llamaMessages);
+      // Auto-detect and use available local server (Ollama or llama.cpp)
+      const localResult = await streamLocalResponse(localMessages);
+      streamBody = localResult.body;
+
+      // Store server type for response parsing
+      (streamBody as any).__serverType = localResult.serverType;
     }
 
     const encoder = new TextEncoder();
@@ -957,9 +1064,12 @@ export async function POST(request: NextRequest) {
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
 
-            // All models now use OpenAI-compatible streaming format (data: {...})
-            // This includes llama.cpp, Mistral, and other OpenAI-compatible APIs
-            if (true) {
+            // Check if this is an Ollama response (different format)
+            const isOllama = (streamBody as any)?.__serverType === "ollama";
+
+            // Handle different streaming formats
+            if (!isOllama) {
+              // OpenAI-compatible format (llama.cpp, Mistral)
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
@@ -1022,6 +1132,48 @@ export async function POST(request: NextRequest) {
                       data,
                     );
                   }
+                }
+              }
+            } else {
+              // Ollama streaming format (newline-delimited JSON)
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  let content = parsed.message?.content;
+                  if (content) {
+                    // If Loom is active, convert ADD_FILE markers to CANVAS_EDIT on-the-fly
+                    if (loomEnabled && loomContext) {
+                      const converted = convertAddFileToCanvasEdit(
+                        content,
+                        inAddFile,
+                        addFileBuffer,
+                      );
+                      content = converted.content;
+                      inAddFile = converted.inAddFile;
+                      addFileBuffer = converted.addFileBuffer;
+                    }
+
+                    controller.enqueue(
+                      encoder.encode(
+                        `data: ${JSON.stringify({ content })}\n\n`,
+                      ),
+                    );
+                  }
+
+                  // Check if this is the final message
+                  if (parsed.done) {
+                    break;
+                  }
+                } catch (e) {
+                  console.error(
+                    "Error parsing Ollama SSE data:",
+                    e,
+                    "Raw data:",
+                    trimmed,
+                  );
                 }
               }
             }

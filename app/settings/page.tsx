@@ -242,7 +242,7 @@ export default function Settings() {
                             <SelectItem value="atom">
                               <div className="flex items-center gap-2">
                                 <span className="h-2 w-2 rounded-full bg-green-500" />
-                                Local (llama.cpp)
+                                Local AI (Ollama / llama.cpp)
                               </div>
                             </SelectItem>
                             <SelectItem value="mistral">
@@ -254,28 +254,36 @@ export default function Settings() {
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          Local: Run models on your machine with llama.cpp
-                          (private) • Cloud: Use Mistral&apos;s API (requires
-                          key)
+                          Local: Auto-detects Ollama (recommended) or llama.cpp
+                          • Cloud: Uses Mistral&apos;s API (requires key)
                         </p>
                       </div>
 
                       {selectedModel === "atom" && (
-                        <div className="space-y-2">
-                          <Label htmlFor="serverUrl">
-                            llama.cpp Server URL
-                          </Label>
-                          <Input
-                            id="serverUrl"
-                            value={serverUrl}
-                            onChange={(e) => setServerUrl(e.target.value)}
-                            placeholder="http://localhost:8082"
-                            className="bg-background/50"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            URL of your running llama.cpp server (default:
-                            http://localhost:8082)
-                          </p>
+                        <div className="space-y-4">
+                          <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                            <p className="text-sm text-green-400">
+                              <strong>Auto-detection:</strong> Continuum will
+                              automatically detect and use Ollama
+                              (localhost:11434) or llama.cpp (localhost:8082).
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="serverUrl">
+                              llama.cpp Server URL (Optional)
+                            </Label>
+                            <Input
+                              id="serverUrl"
+                              value={serverUrl}
+                              onChange={(e) => setServerUrl(e.target.value)}
+                              placeholder="http://localhost:8082"
+                              className="bg-background/50"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Only needed if using llama.cpp on a custom
+                              port/host. Ollama uses default port 11434.
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
