@@ -1,256 +1,338 @@
-# Continuum
+<p align="center">
+  <img src="docs/continuum-logo.png" alt="Continuum" width="140" />
+</p>
 
-Continuum is a desktop AI chat application developed by VANTA Research. It provides a clean, professional interface for interacting with AI models, featuring project organization, document editing with AI collaboration, and a customizable One Dark-inspired theme.
+<h1 align="center">Continuum</h1>
 
-## Features
+<p align="center">
+  <strong>The AI-native cognitive workspace.</strong>
+</p>
 
-### Chat Interface
-- Real-time streaming chat with AI models
-- Multiple chat sessions per project
-- Message editing and regeneration
-- Copy and delete message actions
-- Markdown rendering with syntax highlighting
-- File attachments and context sharing
+<p align="center">
+  Not a chat app. Not an editor. A space where thinking happens—<br/>
+  with artificial intelligence woven into every layer.
+</p>
 
-### Project Management
-- Organize conversations into projects
-- Project-specific file storage
-- Session history per project
-- Create, rename, and delete projects
+<p align="center">
+  <a href="#the-idea">The Idea</a> •
+  <a href="#the-loom">The Loom</a> •
+  <a href="#enter-your-workspace">Get Started</a> •
+  <a href="#own-your-mind">Privacy</a>
+</p>
 
-### Loom Editor
-- Side-by-side document editing with AI assistance
-- Real-time AI cursor tracking
-- Pending edit review system with accept/reject workflow
-- Auto-accept mode for faster collaboration
-- Edit and preview modes with live markdown rendering
-- File sidebar for project document management
+---
 
-### Model Support
-- Local models via llama.cpp server (Atom)
-- Mistral API integration
-- HuggingFace model downloading
-- Configurable temperature and token limits
+## The Idea
 
-### Customization
-- One Dark theme with customizable accent colors
-- Five accent color options: Blue, Green, Purple, Red, Yellow
-- Persistent user preferences
+We don't need more AI tools. We need better *spaces* for thinking.
 
-### Web Search (Optional)
-- Real-time web search integration
-- Requires Google Custom Search API configuration
+A cognitive workspace is where intellectual work happens. It's your writer's study, your research lab, your whiteboard at 2am. It's where ideas emerge, collide, and evolve.
 
-## Technology
+**Continuum is that space—built from the ground up for human-AI collaboration.**
 
-- Next.js 16 with App Router
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- CodeMirror 6 for editors
-- Electron for desktop packaging
-- shadcn/ui components
+Most AI products treat intelligence as a feature. A button you click. A sidebar that appears. Continuum treats AI as *environment*. It's not something you use; it's something you think *within*.
 
-## Requirements
+---
 
-- Node.js 20 or later
-- npm
-- For local models: llama.cpp server
+## What Makes It Different
 
-## Installation
+### AI-Native, Not AI-Added
 
-Clone the repository and install dependencies:
+Other tools bolt AI onto existing paradigms. A chat window here. An "improve writing" button there.
+
+Continuum was designed the other way around: **What would a workspace look like if AI was there from the beginning?**
+
+The answer isn't a better chatbot. It's a new kind of space where:
+- Your thinking and AI thinking flow together
+- Ideas develop through dialogue, not commands
+- You stay in control without losing momentum
+- Context persists across sessions, projects, and time
+
+### Cognitive Contexts
+
+Your mind doesn't work in one thread. You think about different things in different ways.
+
+Continuum gives you **spaces**—not folders, not tags, but distinct cognitive contexts. Your novel lives in one space. Your startup research in another. Your personal journal in a third.
+
+Each space maintains its own:
+- Conversation history
+- Reference documents
+- AI context and memory
+- Tone and working style
+
+Switch between them and feel the shift. Like walking from your studio into your library.
+
+---
+
+## The Loom
+
+<p align="center">
+  <em>Where ideas take form.</em>
+</p>
+
+The Loom is Continuum's collaborative canvas. It's where you and AI write together—not in turns, but in *flow*.
+
+**Watch ideas emerge.** The AI's cursor moves in real-time. You see thoughts form, not just appear.
+
+**Stay in control.** Every AI suggestion appears as a pending change. Full diffs. Accept what resonates, reject what doesn't. Or flip on auto-accept when you're in creative flow and want the AI to keep up.
+
+**Think in drafts.** The Loom isn't for final copy. It's for exploration. For that messy middle stage where ideas are still finding their shape. Refine later. Think now.
+
+**Native Markdown.** Write in Markdown, preview in real-time. Perfect for technical docs, blog posts, notes, fiction—anything where structure and prose intersect.
+
+The Loom isn't a document editor with AI features. It's a collaboration space that happens to produce documents.
+
+---
+
+## Dialogue, Not Commands
+
+The chat in Continuum isn't a command line. It's a thinking partner.
+
+- **Explore ideas** before committing them to the Loom
+- **Ask questions** about your own documents
+- **Think out loud** and let the AI reflect back
+- **Branch conversations** into new threads when ideas diverge
+
+Every conversation is preserved. Every thread can be resumed. Your thinking accumulates.
+
+---
+
+## Own Your Mind
+
+Here's the thing about cognitive workspaces: they contain your *thinking*. Your half-formed ideas. Your private drafts. Your intellectual fingerprint.
+
+That shouldn't live on someone else's servers.
+
+**Continuum lets you run AI locally.** Your models. Your machine. Your data never leaves.
+
+- **llama.cpp integration** — Run Llama, Mistral, or any GGUF model locally
+- **Zero telemetry** — We don't track. We don't phone home. We don't peek.
+- **Local storage** — Plain files on your disk. Portable. Yours.
+
+Or connect to cloud APIs when you need more capability. The architecture supports both. The choice is always yours.
+
+**Your mind, your rules.**
+
+---
+
+## The Aesthetic
+
+A workspace should feel like *yours*.
+
+Continuum ships with a carefully crafted **One Dark** theme—easy on the eyes during long sessions, beautiful enough to inspire.
+
+**Five accent colors** let you make it personal: Blue, Green, Purple, Red, Yellow. Small touch. Surprising difference.
+
+**Native desktop app** via Electron. Not a browser tab. Not a web app pretending to be software. A real application that lives in your dock.
+
+Details matter. The space you think in shapes the thoughts you have.
+
+---
+
+## Enter Your Workspace
+
+### Quick Start
 
 ```bash
+git clone https://github.com/vanta-research/continuum.git
 cd continuum
 npm install
-```
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env.local` file for core settings:
-
-```env
-LLAMA_SERVER_URL=http://localhost:8082
-```
-
-Create a `.env.search` file for optional web search:
-
-```env
-GOOGLE_API_KEY=your_google_api_key
-GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
-```
-
-### Settings Page
-
-Access the settings page to configure:
-
-- Model selection (Atom Local, Atom-Large-Experimental, Mistral API)
-- LLaMA server URL for local inference
-- Temperature and max token parameters
-- Response streaming toggle
-- Mistral API key
-- Accent color preference
-
-## Running the Application
-
-### Development Mode
-
-```bash
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser.
+Open [localhost:3000](http://localhost:3000). You're in.
 
-### Electron Development
+### Desktop App
 
 ```bash
 npm run electron:dev
 ```
 
-### Production Build
+### Local AI (Optional)
 
-```bash
-npm run build
-npm start
+For complete cognitive sovereignty:
+
+1. **Set up llama.cpp**
+   ```bash
+   git clone https://github.com/ggerganov/llama.cpp
+   cd llama.cpp
+   make
+   ```
+
+2. **Download a model** — [Mistral 7B Instruct](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF) is a great start
+
+3. **Run the server**
+   ```bash
+   ./llama-server --model your-model.gguf --port 8082 --ctx-size 4096
+   ```
+
+4. **Configure** — Settings → Model → "Atom Local"
+
+Your AI. Your hardware. Your thoughts.
+
+---
+
+## Configuration
+
+### Environment
+
+Create `.env.local`:
+```env
+LLAMA_SERVER_URL=http://localhost:8082
 ```
 
-### Electron Build
-
-Build for current platform:
-
-```bash
-npm run electron:build
+Optional web search (`.env.search`):
+```env
+GOOGLE_API_KEY=your_key
+GOOGLE_SEARCH_ENGINE_ID=your_engine_id
 ```
 
-Build for all platforms:
+### In-App
 
+Everything else lives in Settings:
+- Model selection (local or cloud)
+- Temperature and token limits  
+- Accent color
+- API keys (stored locally)
+
+---
+
+## Building
+
+### Web
 ```bash
-npm run electron:build:all
+npm run build && npm start
 ```
 
-## Local Model Setup
-
-### Install llama.cpp
-
+### Desktop
 ```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-make
+npm run electron:build        # Current platform
+npm run electron:build:all    # All platforms
 ```
 
-### Start the Server
+---
 
-```bash
-./server --model your-model.gguf \
-  --host 0.0.0.0 \
-  --port 8082 \
-  --ctx-size 4096 \
-  --n-gpu-layers 35
-```
+## Under the Hood
 
-## Project Structure
+<details>
+<summary><strong>Tech Stack</strong></summary>
+
+- Next.js 16 (App Router)
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- CodeMirror 6
+- Electron
+- shadcn/ui
+
+</details>
+
+<details>
+<summary><strong>Architecture</strong></summary>
 
 ```
 continuum/
-├── app/                    # Next.js app router pages
-│   ├── api/               # API routes
-│   │   ├── chat/          # Chat completion endpoint
-│   │   ├── memory/        # Memory/context management
-│   │   ├── models/        # Model management endpoints
-│   │   ├── projects/      # Project CRUD operations
-│   │   ├── search/        # Web search endpoint
-│   │   └── settings/      # Settings persistence
-│   ├── memory/            # Memory page
-│   └── settings/          # Settings page
+├── app/                    # Pages and API routes
+│   ├── api/
+│   │   ├── chat/          # AI completions (streaming)
+│   │   ├── projects/      # Workspace management
+│   │   ├── models/        # Model management
+│   │   └── settings/      # Preferences
+│   └── ...
 ├── components/
-│   ├── canvas/            # Canvas editor components
-│   ├── loom/              # Loom editor components
-│   ├── projects/          # Project management components
-│   └── ui/                # shadcn/ui components
-├── lib/                   # Utility functions and types
-├── data/                  # Local data storage
-└── electron/              # Electron main process
+│   ├── loom/              # The Loom editor
+│   ├── projects/          # Workspace UI
+│   └── ui/                # Shared components
+├── lib/                   # Core utilities
+└── electron/              # Desktop wrapper
 ```
 
-## API Endpoints
+</details>
 
-### Chat
+<details>
+<summary><strong>API Reference</strong></summary>
 
+**Chat**
 ```
-POST /api/chat
-```
-
-Send messages to the AI model. Supports streaming responses.
-
-### Projects
-
-```
-GET    /api/projects              # List all projects
-POST   /api/projects              # Create project
-GET    /api/projects/[id]         # Get project details
-PUT    /api/projects/[id]         # Update project
-DELETE /api/projects/[id]         # Delete project
+POST /api/chat                              # Streaming AI completion
 ```
 
-### Sessions
-
+**Projects (Workspaces)**
 ```
-GET    /api/projects/[id]/sessions           # List sessions
-POST   /api/projects/[id]/sessions           # Create session
-GET    /api/projects/[id]/sessions/[sid]     # Get session
-PUT    /api/projects/[id]/sessions/[sid]     # Update session
-DELETE /api/projects/[id]/sessions/[sid]     # Delete session
+GET|POST        /api/projects               # List / Create
+GET|PUT|DELETE  /api/projects/[id]          # Read / Update / Delete
 ```
 
-### Files
-
+**Sessions (Threads)**
 ```
-GET    /api/projects/[id]/files              # List files
-POST   /api/projects/[id]/files              # Upload file
-GET    /api/projects/[id]/files/[fid]        # Get file
-PATCH  /api/projects/[id]/files/[fid]        # Update file
-DELETE /api/projects/[id]/files/[fid]        # Delete file
+GET|POST        /api/projects/[id]/sessions
+PUT|DELETE      /api/projects/[id]/sessions/[sid]
 ```
 
-### Settings
-
+**Files**
 ```
-GET  /api/settings    # Load settings
-POST /api/settings    # Save settings
-```
-
-### Models
-
-```
-GET  /api/models/available       # List available HuggingFace models
-GET  /api/models/local           # List downloaded models
-POST /api/models/download        # Download a model
-POST /api/models/validate-token  # Validate HuggingFace token
+GET|POST        /api/projects/[id]/files
+PATCH|DELETE    /api/projects/[id]/files/[fid]
 ```
 
-## Troubleshooting
+**Models**
+```
+GET   /api/models/available                 # Browse HuggingFace
+GET   /api/models/local                     # List downloaded
+POST  /api/models/download                  # Download model
+```
 
-### Connection Failed
+</details>
 
-Verify that the llama.cpp server is running and accessible at the configured URL. Check firewall settings if running on a different machine.
+---
 
-### Slow Responses
+## Requirements
 
-Reduce the max tokens setting or use a smaller quantized model. Ensure GPU acceleration is properly configured in llama.cpp.
+- Node.js 20+
+- npm
+- For local AI: llama.cpp + GPU (recommended)
 
-### Model Not Loading
+---
 
-Confirm the model file path is correct and the file is not corrupted. Check available system memory and VRAM.
+## The Future
+
+Continuum is the beginning.
+
+- [ ] **Voice** — Think out loud, literally
+- [ ] **Plugins** — Extend the workspace with custom tools
+- [ ] **Multiplayer** — Collaborative cognitive spaces
+- [ ] **Mobile** — Your workspace, everywhere
+- [ ] **More models** — Anthropic, OpenAI, Ollama
+
+The goal isn't to build features. It's to build the best possible space for human-AI thinking.
+
+---
+
+## Contributing
+
+Built by [VANTA Research](https://github.com/vanta-research).
+
+We welcome collaborators who share the vision. Fork, branch, PR.
+
+---
 
 ## License
 
-MIT License
+MIT — Use it. Modify it. Make it yours.
 
-## Credits
+---
 
-Developed by VANTA Research.
+<p align="center">
+  <em>"The tools we use shape the thoughts we think."</em>
+</p>
 
-Built with Next.js, React, Tailwind CSS, shadcn/ui, CodeMirror, and Electron.
+<p align="center">
+  <strong>Continuum is the space where your mind meets AI.</strong><br/>
+  Not to replace your thinking. To expand it.
+</p>
+
+<p align="center">
+  <a href="https://github.com/vanta-research/continuum">GitHub</a> •
+  <a href="https://github.com/vanta-research/continuum/issues">Issues</a> •
+  <a href="https://github.com/vanta-research/continuum/discussions">Discussions</a>
+</p>
