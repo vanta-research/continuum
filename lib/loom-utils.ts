@@ -1,8 +1,11 @@
 import type { ParsedLoomEdit } from "./loom-types";
 
-// Regex patterns for loom edit markers (model outputs CANVAS_EDIT markers)
+// Regex patterns for loom edit markers
+// Support both CANVAS_EDIT (legacy) and ADD_FILE (preferred) formats
 const LOOM_EDIT_START_PATTERN = /\[CANVAS_EDIT_START:(\d+)\]/;
 const LOOM_EDIT_END_PATTERN = /\[CANVAS_EDIT_END\]/;
+const ADD_FILE_START_PATTERN = /\[ADD_FILE\]/;
+const ADD_FILE_END_PATTERN = /\[\/ADD_FILE\]/;
 
 interface ParseResult {
   beforeMarker: string;
@@ -13,10 +16,11 @@ interface ParseResult {
 
 /**
  * Parse a streaming chunk for loom edit markers.
+ * Supports both CANVAS_EDIT and ADD_FILE formats.
  * Returns information about any markers found and the remaining text.
  */
 export function parseStreamChunk(chunk: string): ParseResult {
-  // Check for edit start marker
+  // Check for CANVAS_EDIT start marker (legacy format)
   const startMatch = chunk.match(LOOM_EDIT_START_PATTERN);
   if (startMatch) {
     const markerIndex = chunk.indexOf(startMatch[0]);
@@ -28,7 +32,19 @@ export function parseStreamChunk(chunk: string): ParseResult {
     };
   }
 
-  // Check for edit end marker
+  // Check for ADD_FILE start marker (preferred format)
+  const addFileStartMatch = chunk.match(ADD_FILE_START_PATTERN);
+  if (addFileStartMatch) {
+    const markerIndex = chunk.indexOf(addFileStartMatch[0]);
+    return {
+      beforeMarker: chunk.slice(0, markerIndex),
+      type: "canvas_edit_start",
+      line: 1, // ADD_FILE always targets line 1 (full document replace)
+      afterMarker: chunk.slice(markerIndex + addFileStartMatch[0].length),
+    };
+  }
+
+  // Check for CANVAS_EDIT end marker (legacy format)
   const endMatch = chunk.match(LOOM_EDIT_END_PATTERN);
   if (endMatch) {
     const markerIndex = chunk.indexOf(endMatch[0]);
@@ -36,6 +52,17 @@ export function parseStreamChunk(chunk: string): ParseResult {
       beforeMarker: chunk.slice(0, markerIndex),
       type: "canvas_edit_end",
       afterMarker: chunk.slice(markerIndex + endMatch[0].length),
+    };
+  }
+
+  // Check for ADD_FILE end marker (preferred format)
+  const addFileEndMatch = chunk.match(ADD_FILE_END_PATTERN);
+  if (addFileEndMatch) {
+    const markerIndex = chunk.indexOf(addFileEndMatch[0]);
+    return {
+      beforeMarker: chunk.slice(0, markerIndex),
+      type: "canvas_edit_end",
+      afterMarker: chunk.slice(markerIndex + addFileEndMatch[0].length),
     };
   }
 
@@ -48,6 +75,40 @@ export function parseStreamChunk(chunk: string): ParseResult {
 }
 
 /**
+ * Extract content from ADD_FILE JSON format.
+ * Handles: {"content": "..."} or just raw content
+ */
+export function extractAddFileContent(jsonOrContent: string): string {
+  const trimmed = jsonOrContent.trim();
+
+  // Try to parse as JSON first
+  try {
+    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.content) {
+        return parsed.content;
+      }
+    }
+  } catch {
+    // JSON parsing failed, try regex extraction
+  }
+
+  // Regex fallback for malformed JSON
+  const contentMatch = trimmed.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (contentMatch) {
+    return contentMatch[1]
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
+      .replace(/\\t/g, "\t");
+  }
+
+  // If no JSON structure found, return as-is (might be raw content)
+  return trimmed;
+}
+
+/**
  * State machine for parsing loom edits from a stream.
  */
 export class LoomEditParser {
@@ -55,6 +116,7 @@ export class LoomEditParser {
   private currentLine: number | null = null;
   private editBuffer = "";
   private textBuffer = "";
+  private isAddFileFormat = false; // Track if we're parsing ADD_FILE format
 
   /**
    * Process a chunk of streaming content.
@@ -77,6 +139,9 @@ export class LoomEditParser {
           this.textBuffer = "";
         }
 
+        // Detect if this is ADD_FILE format (check original remaining text)
+        this.isAddFileFormat = remaining.includes("[ADD_FILE]");
+
         // Start edit block
         this.inEditBlock = true;
         this.currentLine = result.line!;
@@ -93,9 +158,15 @@ export class LoomEditParser {
         if (this.inEditBlock) {
           this.editBuffer += result.beforeMarker;
 
+          // If ADD_FILE format, extract content from JSON wrapper
+          let finalContent = this.editBuffer;
+          if (this.isAddFileFormat) {
+            finalContent = extractAddFileContent(this.editBuffer);
+          }
+
           events.push({
             type: "canvas_content",
-            content: this.editBuffer,
+            content: finalContent,
           });
 
           events.push({
@@ -109,6 +180,7 @@ export class LoomEditParser {
         this.inEditBlock = false;
         this.currentLine = null;
         this.editBuffer = "";
+        this.isAddFileFormat = false;
 
         remaining = result.afterMarker;
       } else {
@@ -144,6 +216,7 @@ export class LoomEditParser {
     this.currentLine = null;
     this.editBuffer = "";
     this.textBuffer = "";
+    this.isAddFileFormat = false;
   }
 
   /**
@@ -393,85 +466,75 @@ export function parseAddFileMarkers(content: string): ParsedAddFile {
  * Clean ADD_FILE markers from text for display during streaming.
  */
 export function cleanAddFileMarkers(text: string): string {
-  // Debug: check if markers are present
-  const hasAddFile = text.includes("[ADD_FILE]");
-  const hasCloseAddFile = text.includes("[/ADD_FILE]");
-
-  if (hasAddFile || hasCloseAddFile) {
-    console.log("[cleanAddFileMarkers] Input contains markers:", {
-      hasAddFile,
-      hasCloseAddFile,
-      textLength: text.length,
-      preview: text.substring(0, 200),
-    });
+  // Quick check - if no markers, return early
+  if (!text.includes("[ADD_FILE]") && !text.includes("[/ADD_FILE]")) {
+    return text;
   }
 
-  // Try multiple patterns to catch different formatting variations
-  // Pattern 1: Standard complete block with flexible whitespace
-  let cleaned = text.replace(/\[ADD_FILE\][\s\S]*?\[\/ADD_FILE\]/gi, "");
+  // Simple string-based approach that will definitely work
+  // Find the start and end positions
+  const startMarker = "[ADD_FILE]";
+  const endMarker = "[/ADD_FILE]";
 
-  if (hasAddFile && cleaned !== text) {
-    console.log("[cleanAddFileMarkers] Pattern 1 matched, removed block");
-  }
+  let result = text;
+  let iterations = 0;
+  const maxIterations = 10; // Safety limit
 
-  // Pattern 2: Block with potential unicode/zero-width characters around tags
-  const beforeP2 = cleaned;
-  cleaned = cleaned.replace(
-    /\[ADD_FILE\s*\][\s\S]*?\[\s*\/\s*ADD_FILE\s*\]/gi,
-    "",
-  );
-  if (cleaned !== beforeP2) {
-    console.log("[cleanAddFileMarkers] Pattern 2 matched");
-  }
+  // Remove all complete [ADD_FILE]...[/ADD_FILE] blocks
+  while (iterations < maxIterations) {
+    const startIdx = result.indexOf(startMarker);
+    const endIdx = result.indexOf(endMarker);
 
-  // Pattern 3: Just the markers without proper JSON (malformed)
-  const beforeP3 = cleaned;
-  cleaned = cleaned.replace(/\[ADD_FILE[^\[]*\[\/ADD_FILE\]/gi, "");
-  if (cleaned !== beforeP3) {
-    console.log("[cleanAddFileMarkers] Pattern 3 matched");
-  }
-
-  // Pattern 4: Incomplete block at end (no closing tag yet)
-  const beforeP4 = cleaned;
-  cleaned = cleaned.replace(/\[ADD_FILE\][\s\S]*$/, "");
-  if (cleaned !== beforeP4) {
-    console.log("[cleanAddFileMarkers] Pattern 4 matched (incomplete block)");
-  }
-
-  // Pattern 5: Partial opening markers at end of string
-  cleaned = cleaned.replace(/\[ADD_FILE[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[ADD_FIL[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[ADD_FI[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[ADD_F[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[ADD_[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[ADD[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[AD[^\]]*$/, "");
-  cleaned = cleaned.replace(/\[A[^\]]*$/, "");
-
-  // Final fallback: if markers are STILL present, forcefully remove them line by line
-  if (cleaned.includes("[ADD_FILE]") || cleaned.includes("[/ADD_FILE]")) {
-    console.log(
-      "[cleanAddFileMarkers] Markers still present after regex, using line-by-line fallback",
-    );
-    const lines = cleaned.split("\n");
-    const filteredLines: string[] = [];
-    let inAddFileBlock = false;
-
-    for (const line of lines) {
-      if (line.includes("[ADD_FILE]")) {
-        inAddFileBlock = true;
-        continue;
-      }
-      if (line.includes("[/ADD_FILE]")) {
-        inAddFileBlock = false;
-        continue;
-      }
-      if (!inAddFileBlock) {
-        filteredLines.push(line);
-      }
+    if (startIdx === -1 && endIdx === -1) {
+      // No markers left
+      break;
     }
-    cleaned = filteredLines.join("\n");
+
+    if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
+      // Complete block found - remove it
+      const before = result.substring(0, startIdx);
+      const after = result.substring(endIdx + endMarker.length);
+      result = before + after;
+    } else if (startIdx !== -1 && (endIdx === -1 || endIdx < startIdx)) {
+      // Only start marker, or end comes before start (malformed)
+      // Remove from start marker to end of string (incomplete block)
+      result = result.substring(0, startIdx);
+      break;
+    } else if (endIdx !== -1 && startIdx === -1) {
+      // Only end marker (orphaned) - remove just the marker
+      result =
+        result.substring(0, endIdx) +
+        result.substring(endIdx + endMarker.length);
+    } else {
+      break;
+    }
+
+    iterations++;
   }
 
-  return cleaned.trim();
+  // Clean up any partial markers at the end
+  const partials = [
+    "[ADD_FILE",
+    "[ADD_FIL",
+    "[ADD_FI",
+    "[ADD_F",
+    "[ADD_",
+    "[ADD",
+    "[AD",
+    "[/ADD_FILE",
+    "[/ADD_FIL",
+    "[/ADD_FI",
+    "[/ADD_F",
+    "[/ADD_",
+    "[/ADD",
+    "[/AD",
+  ];
+
+  for (const partial of partials) {
+    if (result.endsWith(partial)) {
+      result = result.substring(0, result.length - partial.length);
+    }
+  }
+
+  return result.trim();
 }

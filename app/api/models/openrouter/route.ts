@@ -91,7 +91,10 @@ export async function GET(request: Request) {
         description: model.description || "OpenRouter model",
         pricing: model.pricing,
         contextLength: model.context_length,
-        provider: model.id.split("/")[0],
+        // Use 'openrouter' as the provider so routing works correctly
+        // The original provider (e.g., 'moonshotai') is kept in originalProvider for display
+        provider: "openrouter",
+        originalProvider: model.id.split("/")[0],
         modelName: model.id.split("/")[1],
       }));
 

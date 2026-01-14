@@ -74,73 +74,6 @@ import type {
   StoredLoomDocument,
 } from "@/lib/project-types";
 
-/**
- * Convert ADD_FILE markers to CANVAS_EDIT markers on the client side.
- * This is a fallback in case server-side conversion fails or doesn't run.
- */
-function convertAddFileToCanvasEdit(response: string): string {
-  // Check if we have ADD_FILE markers that weren't converted
-  const addFileMatch = response.match(
-    /\[ADD_FILE\]\s*([\s\S]*?)\s*\[\/ADD_FILE\]/,
-  );
-
-  if (!addFileMatch) {
-    return response; // No ADD_FILE markers, return as-is
-  }
-
-  console.log(
-    "[Loom Client] Found ADD_FILE markers, converting to CANVAS_EDIT",
-  );
-
-  try {
-    // Try to parse the JSON and extract content
-    const jsonStr = addFileMatch[1].trim();
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.content) {
-        // Replace ADD_FILE block with CANVAS_EDIT block
-        const converted = response.replace(
-          /\[ADD_FILE\]\s*[\s\S]*?\s*\[\/ADD_FILE\]/,
-          `[CANVAS_EDIT_START:1]${parsed.content}[CANVAS_EDIT_END]`,
-        );
-        console.log(
-          "[Loom Client] Successfully converted ADD_FILE to CANVAS_EDIT",
-        );
-        return converted;
-      }
-    }
-  } catch (e) {
-    console.error("[Loom Client] Failed to parse ADD_FILE JSON:", e);
-  }
-
-  // Fallback: try regex extraction
-  try {
-    const contentMatch = addFileMatch[1].match(
-      /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
-    );
-    if (contentMatch) {
-      const extractedContent = contentMatch[1]
-        .replace(/\\n/g, "\n")
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, "\\")
-        .replace(/\\t/g, "\t");
-
-      const converted = response.replace(
-        /\[ADD_FILE\]\s*[\s\S]*?\s*\[\/ADD_FILE\]/,
-        `[CANVAS_EDIT_START:1]${extractedContent}[CANVAS_EDIT_END]`,
-      );
-      console.log("[Loom Client] Converted ADD_FILE using regex fallback");
-      return converted;
-    }
-  } catch (e) {
-    console.error("[Loom Client] Regex fallback failed:", e);
-  }
-
-  return response; // Return unchanged if all conversion attempts fail
-}
-
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -625,6 +558,9 @@ function ChatInterfaceInner() {
             : 0,
       });
 
+      // Debug: Log the model being sent
+      console.log("[Chat Client] Sending request with model:", selectedModel);
+
       // Create abort controller for this request
       abortControllerRef.current = new AbortController();
 
@@ -719,20 +655,15 @@ function ChatInterfaceInner() {
               if (content) {
                 fullResponse += content;
 
-                // Debug: log when we see CANVAS_EDIT markers being streamed
-                if (content.includes("[CANVAS_EDIT_START")) {
-                  console.log(
-                    "[Loom Debug] CANVAS_EDIT_START received in stream chunk",
-                  );
-                }
-                if (content.includes("[CANVAS_EDIT_END]")) {
-                  console.log(
-                    "[Loom Debug] CANVAS_EDIT_END received in stream chunk",
-                  );
-                }
+                // Debug: log when we see edit markers being streamed
                 if (content.includes("[ADD_FILE]")) {
                   console.log(
-                    "[Loom Debug] WARNING: Raw ADD_FILE marker in stream - conversion may have failed",
+                    "[Loom Debug] ADD_FILE marker received in stream chunk",
+                  );
+                }
+                if (content.includes("[/ADD_FILE]")) {
+                  console.log(
+                    "[Loom Debug] /ADD_FILE marker received in stream chunk",
                   );
                 }
 
@@ -788,31 +719,13 @@ function ChatInterfaceInner() {
         fullResponse.substring(Math.max(0, fullResponse.length - 200)),
       );
       console.log(
-        "[Loom Debug] Contains CANVAS_EDIT_START:",
-        fullResponse.includes("[CANVAS_EDIT_START"),
-      );
-      console.log(
-        "[Loom Debug] Contains CANVAS_EDIT_END:",
-        fullResponse.includes("[CANVAS_EDIT_END]"),
-      );
-      console.log(
-        "[Loom Debug] Contains raw ADD_FILE:",
+        "[Loom Debug] Contains ADD_FILE:",
         fullResponse.includes("[ADD_FILE]"),
       );
       console.log(
-        "[Loom Debug] Contains raw /ADD_FILE:",
+        "[Loom Debug] Contains /ADD_FILE:",
         fullResponse.includes("[/ADD_FILE]"),
       );
-
-      // Client-side fallback: convert ADD_FILE to CANVAS_EDIT if server didn't
-      if (isLoomStillActive && fullResponse.includes("[ADD_FILE]")) {
-        console.log("[Loom Debug] Running client-side ADD_FILE conversion");
-        fullResponse = convertAddFileToCanvasEdit(fullResponse);
-        console.log(
-          "[Loom Debug] After conversion - Contains CANVAS_EDIT_START:",
-          fullResponse.includes("[CANVAS_EDIT_START"),
-        );
-      }
 
       if (isLoomStillActive) {
         // Debug: log the full response before attempting to match
@@ -932,40 +845,72 @@ function ChatInterfaceInner() {
           }
         }
 
-        // Only process CANVAS_EDIT if we didn't already handle surgical edits
+        // Only process edits if we didn't already handle surgical edits
         if (!handledBySurgicalEdit) {
-          // More flexible regex that handles markdown formatting around the markers
-          // The model sometimes wraps markers with --- or other markdown
+          // Try CANVAS_EDIT format first (legacy)
           const editMatch = fullResponse.match(
             /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
           );
 
-          console.log("[Loom Debug] editMatch found:", !!editMatch);
-          if (!editMatch) {
-            console.log(
-              "[Loom Debug] NO MATCH! Trying alternative patterns...",
+          // If no CANVAS_EDIT, try ADD_FILE format (preferred)
+          let targetLine = 1;
+          let editContent = "";
+
+          if (editMatch) {
+            console.log("[Loom Debug] Found CANVAS_EDIT format");
+            targetLine = parseInt(editMatch[1], 10);
+            editContent = editMatch[2].trim();
+          } else {
+            // Try ADD_FILE format
+            const addFileMatch = fullResponse.match(
+              /\[ADD_FILE\]([\s\S]*?)\[\/ADD_FILE\]/,
             );
-            // Try to find any CANVAS_EDIT markers at all
-            const hasStart = fullResponse.indexOf("[CANVAS_EDIT_START");
-            const hasEnd = fullResponse.indexOf("[CANVAS_EDIT_END]");
-            console.log(
-              "[Loom Debug] Start marker index:",
-              hasStart,
-              "End marker index:",
-              hasEnd,
-            );
-            if (hasStart !== -1 && hasEnd !== -1) {
-              console.log(
-                "[Loom Debug] Content between markers:",
-                fullResponse.substring(hasStart, hasEnd + 20),
-              );
+            if (addFileMatch) {
+              console.log("[Loom Debug] Found ADD_FILE format");
+              const jsonContent = addFileMatch[1];
+
+              // Extract content from JSON wrapper
+              try {
+                const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[0]);
+                  if (parsed.content) {
+                    editContent = parsed.content;
+                    console.log(
+                      "[Loom Debug] Extracted content from ADD_FILE JSON, length:",
+                      editContent.length,
+                    );
+                  }
+                }
+              } catch {
+                // Try regex fallback for malformed JSON
+                const contentMatch = jsonContent.match(
+                  /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+                );
+                if (contentMatch) {
+                  editContent = contentMatch[1]
+                    .replace(/\\n/g, "\n")
+                    .replace(/\\"/g, '"')
+                    .replace(/\\\\/g, "\\")
+                    .replace(/\\t/g, "\t");
+                  console.log(
+                    "[Loom Debug] Extracted content via regex fallback, length:",
+                    editContent.length,
+                  );
+                }
+              }
             }
           }
-          if (editMatch) {
-            console.log("[Loom Debug] Target line:", editMatch[1]);
+
+          console.log(
+            "[Loom Debug] editContent found:",
+            editContent.length > 0,
+          );
+          if (editContent.length > 0) {
+            console.log("[Loom Debug] Target line:", targetLine);
             console.log(
               "[Loom Debug] Edit content length:",
-              editMatch[2]?.length,
+              editContent.length,
             );
             console.log(
               "[Loom Debug] autoAcceptEdits:",
@@ -973,9 +918,7 @@ function ChatInterfaceInner() {
             );
           }
 
-          if (editMatch) {
-            const targetLine = parseInt(editMatch[1], 10);
-            const editContent = editMatch[2].trim();
+          if (editContent.length > 0) {
             const currentDocContent = currentLoom.state.document?.content || "";
 
             console.log("[Loom Debug] Processing edit:");
@@ -1011,8 +954,8 @@ function ChatInterfaceInner() {
               currentLoom.updateContent(newContent);
               console.log("[Loom Debug] Content updated in Loom");
 
-              // Final cleanup of chat message
-              const cleanedMessage = cleanLoomMarkers(fullResponse);
+              // Final cleanup of chat message (handles both ADD_FILE and CANVAS_EDIT)
+              const cleanedMessage = cleanAllToolMarkers(fullResponse);
 
               // Compute just the added lines for display
               const diff = computeDiff(currentDocContent, editContent);
