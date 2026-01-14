@@ -81,36 +81,257 @@ export function shouldUseSurgicalEdits(content: string): boolean {
 export function parseSurgicalEdits(output: string): SurgicalEdit[] {
   const edits: SurgicalEdit[] = [];
 
-  // Find all surgical edit blocks
-  const regex = new RegExp(
+  // First, try to find complete surgical edit blocks (with closing marker)
+  const completeRegex = new RegExp(
     `\\${SURGICAL_EDIT_START}([\\s\\S]*?)\\${SURGICAL_EDIT_END}`,
-    "g"
+    "g",
   );
 
   let match;
-  while ((match = regex.exec(output)) !== null) {
+  let foundComplete = false;
+  while ((match = completeRegex.exec(output)) !== null) {
+    foundComplete = true;
     const jsonContent = match[1].trim();
+    const parsed = tryParseEditJson(jsonContent);
+    edits.push(...parsed);
+  }
 
-    try {
-      const parsed = JSON.parse(jsonContent);
+  // If no complete blocks found, try to find incomplete blocks (missing closing marker)
+  if (!foundComplete && output.includes(SURGICAL_EDIT_START)) {
+    console.log(
+      "[SurgicalEdit] No complete blocks found, trying to parse incomplete block",
+    );
+    const incompleteEdits = parseIncompleteSurgicalEdit(output);
+    edits.push(...incompleteEdits);
+  }
 
-      // Handle single edit or array of edits
-      if (Array.isArray(parsed)) {
-        for (const edit of parsed) {
-          if (isValidSurgicalEdit(edit)) {
-            edits.push(normalizeEdit(edit));
+  return edits;
+}
+
+/**
+ * Try to parse JSON content from a surgical edit block
+ */
+function tryParseEditJson(jsonContent: string): SurgicalEdit[] {
+  const edits: SurgicalEdit[] = [];
+
+  try {
+    const parsed = JSON.parse(jsonContent);
+
+    // Handle single edit or array of edits
+    if (Array.isArray(parsed)) {
+      for (const edit of parsed) {
+        if (isValidSurgicalEdit(edit)) {
+          edits.push(normalizeEdit(edit));
+        }
+      }
+    } else if (isValidSurgicalEdit(parsed)) {
+      edits.push(normalizeEdit(parsed));
+    }
+  } catch (error) {
+    console.error("[SurgicalEdit] Failed to parse edit JSON:", error);
+    // Try to extract via regex as fallback
+    const fallbackEdits = parseEditFallbackMultiple(jsonContent);
+    edits.push(...fallbackEdits);
+  }
+
+  return edits;
+}
+
+/**
+ * Parse incomplete surgical edit block (missing closing marker)
+ * This handles cases where the model outputs JSON but forgets to close the marker
+ */
+function parseIncompleteSurgicalEdit(output: string): SurgicalEdit[] {
+  const startIndex = output.indexOf(SURGICAL_EDIT_START);
+  if (startIndex === -1) return [];
+
+  // Extract everything after the start marker
+  const jsonContent = output
+    .substring(startIndex + SURGICAL_EDIT_START.length)
+    .trim();
+
+  // Try to find where the JSON ends
+  // Look for balanced brackets/braces
+  const jsonCandidate = extractJsonFromIncomplete(jsonContent);
+  if (!jsonCandidate) {
+    console.log("[SurgicalEdit] Could not extract JSON from incomplete block");
+    return parseEditFallbackMultiple(jsonContent);
+  }
+
+  return tryParseEditJson(jsonCandidate);
+}
+
+/**
+ * Extract valid JSON from potentially incomplete content
+ */
+function extractJsonFromIncomplete(content: string): string | null {
+  // Try to find if it's an array or object
+  const trimmed = content.trim();
+
+  if (trimmed.startsWith("[")) {
+    // Array of edits - find the closing bracket
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < trimmed.length; i++) {
+      const char = trimmed[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"' && !escaped) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === "[") depth++;
+        if (char === "]") {
+          depth--;
+          if (depth === 0) {
+            return trimmed.substring(0, i + 1);
           }
         }
-      } else if (isValidSurgicalEdit(parsed)) {
-        edits.push(normalizeEdit(parsed));
       }
-    } catch (error) {
-      console.error("[SurgicalEdit] Failed to parse edit JSON:", error);
-      // Try to extract via regex as fallback
-      const fallbackEdit = parseEditFallback(jsonContent);
-      if (fallbackEdit) {
-        edits.push(fallbackEdit);
+    }
+
+    // If we didn't find a closing bracket, try to fix the JSON
+    // by closing any open brackets/braces
+    return tryRepairJson(trimmed);
+  } else if (trimmed.startsWith("{")) {
+    // Single edit object - find the closing brace
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < trimmed.length; i++) {
+      const char = trimmed[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
       }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"' && !escaped) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === "{") depth++;
+        if (char === "}") {
+          depth--;
+          if (depth === 0) {
+            return trimmed.substring(0, i + 1);
+          }
+        }
+      }
+    }
+
+    // Try to repair incomplete JSON
+    return tryRepairJson(trimmed);
+  }
+
+  return null;
+}
+
+/**
+ * Try to repair incomplete JSON by adding missing closing brackets/braces
+ */
+function tryRepairJson(content: string): string | null {
+  const depth = { bracket: 0, brace: 0 };
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' && !escaped) {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === "[") depth.bracket++;
+      if (char === "]") depth.bracket--;
+      if (char === "{") depth.brace++;
+      if (char === "}") depth.brace--;
+    }
+  }
+
+  // If we're in a string, close it
+  let repaired = content;
+  if (inString) {
+    repaired += '"';
+  }
+
+  // Add missing closing braces/brackets
+  while (depth.brace > 0) {
+    repaired += "}";
+    depth.brace--;
+  }
+  while (depth.bracket > 0) {
+    repaired += "]";
+    depth.bracket--;
+  }
+
+  // Try to parse the repaired JSON
+  try {
+    JSON.parse(repaired);
+    console.log("[SurgicalEdit] Successfully repaired incomplete JSON");
+    return repaired;
+  } catch {
+    console.log("[SurgicalEdit] Could not repair JSON");
+    return null;
+  }
+}
+
+/**
+ * Fallback parser that extracts multiple edits using regex
+ */
+function parseEditFallbackMultiple(content: string): SurgicalEdit[] {
+  const edits: SurgicalEdit[] = [];
+
+  // Try to find all edit objects using regex
+  const editPattern =
+    /\{\s*"operation"\s*:\s*"(replace|insert|delete)"[^}]*\}/g;
+  let match;
+
+  while ((match = editPattern.exec(content)) !== null) {
+    const fallbackEdit = parseEditFallback(match[0]);
+    if (fallbackEdit) {
+      edits.push(fallbackEdit);
+    }
+  }
+
+  // If no matches found, try the original fallback for single edit
+  if (edits.length === 0) {
+    const single = parseEditFallback(content);
+    if (single) {
+      edits.push(single);
     }
   }
 
@@ -165,7 +386,8 @@ function normalizeEdit(edit: SurgicalEdit): SurgicalEdit {
     operation: edit.operation,
     startLine: edit.startLine,
     endLine:
-      edit.endLine ?? (edit.operation === "insert" ? undefined : edit.startLine),
+      edit.endLine ??
+      (edit.operation === "insert" ? undefined : edit.startLine),
     content: edit.content,
     description: edit.description,
   };
@@ -175,10 +397,11 @@ function normalizeEdit(edit: SurgicalEdit): SurgicalEdit {
  * Fallback parser using regex for malformed JSON
  */
 function parseEditFallback(content: string): SurgicalEdit | null {
-  const operationMatch = content.match(/"operation"\s*:\s*"(replace|insert|delete)"/);
+  const operationMatch = content.match(
+    /"operation"\s*:\s*"(replace|insert|delete)"/,
+  );
   const startLineMatch = content.match(/"startLine"\s*:\s*(\d+)/);
   const endLineMatch = content.match(/"endLine"\s*:\s*(\d+)/);
-  const contentMatch = content.match(/"content"\s*:\s*"([^"]*)"/);
 
   if (!operationMatch || !startLineMatch) {
     return null;
@@ -187,9 +410,9 @@ function parseEditFallback(content: string): SurgicalEdit | null {
   const operation = operationMatch[1] as EditOperation;
   const startLine = parseInt(startLineMatch[1], 10);
   const endLine = endLineMatch ? parseInt(endLineMatch[1], 10) : undefined;
-  const editContent = contentMatch
-    ? contentMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"')
-    : undefined;
+
+  // Extract content with support for escaped characters and multiline
+  const editContent = extractContentString(content);
 
   // Validate based on operation
   if (
@@ -208,12 +431,77 @@ function parseEditFallback(content: string): SurgicalEdit | null {
 }
 
 /**
+ * Extract the content string from a JSON-like object, handling escapes
+ */
+function extractContentString(content: string): string | undefined {
+  // Find the start of "content": "
+  const contentKeyMatch = content.match(/"content"\s*:\s*"/);
+  if (!contentKeyMatch) {
+    return undefined;
+  }
+
+  const startIdx =
+    content.indexOf(contentKeyMatch[0]) + contentKeyMatch[0].length;
+
+  // Now find the end of the string, handling escaped characters
+  let result = "";
+  let escaped = false;
+
+  for (let i = startIdx; i < content.length; i++) {
+    const char = content[i];
+
+    if (escaped) {
+      // Handle escape sequences
+      switch (char) {
+        case "n":
+          result += "\n";
+          break;
+        case "t":
+          result += "\t";
+          break;
+        case "r":
+          result += "\r";
+          break;
+        case '"':
+          result += '"';
+          break;
+        case "\\":
+          result += "\\";
+          break;
+        default:
+          // Unknown escape, include as-is
+          result += char;
+      }
+      escaped = false;
+    } else if (char === "\\") {
+      escaped = true;
+    } else if (char === '"') {
+      // End of string
+      return result;
+    } else {
+      result += char;
+    }
+  }
+
+  // If we got here, the string wasn't properly closed
+  // Return what we have if it looks like valid content
+  if (result.length > 0) {
+    console.log(
+      "[SurgicalEdit] Content string not properly closed, using partial content",
+    );
+    return result;
+  }
+
+  return undefined;
+}
+
+/**
  * Apply surgical edits to a document
  * Edits are applied in reverse order (bottom to top) to preserve line numbers
  */
 export function applySurgicalEdits(
   documentContent: string,
-  edits: SurgicalEdit[]
+  edits: SurgicalEdit[],
 ): EditResult {
   if (edits.length === 0) {
     return {
@@ -273,7 +561,7 @@ export function applySurgicalEdits(
           if (startIdx < lines.length) {
             const deleteCount = Math.min(
               endIdx - startIdx + 1,
-              lines.length - startIdx
+              lines.length - startIdx,
             );
             lines.splice(startIdx, deleteCount);
             appliedCount++;
@@ -300,7 +588,7 @@ export function applySurgicalEdits(
 export function extractContextWindow(
   documentContent: string,
   targetLine: number,
-  contextLines: number = 20
+  contextLines: number = 20,
 ): DocumentContext {
   const lines = documentContent.split("\n");
   const totalLines = lines.length;
@@ -328,10 +616,10 @@ export function extractContextWindow(
     // Show last 3 lines and line count after context
     const afterLines = lines.slice(
       Math.max(endLine, totalLines - 3),
-      totalLines
+      totalLines,
     );
     afterContext = `[Lines ${endLine + 1}-${totalLines}]: ...${afterLines.join(
-      " | "
+      " | ",
     )}`;
   }
 
@@ -351,7 +639,7 @@ export function extractContextWindow(
  * Build instruction text for surgical edit mode
  */
 export function buildSurgicalEditInstructions(
-  context: DocumentContext
+  context: DocumentContext,
 ): string {
   return `
 ## SURGICAL EDIT MODE (Large Document)
@@ -399,7 +687,7 @@ ${SURGICAL_EDIT_END}
  */
 export function surgicalEditToPendingFormat(
   edit: SurgicalEdit,
-  documentContent: string
+  documentContent: string,
 ): { originalContent: string; newContent: string; targetLine: number } {
   const lines = documentContent.split("\n");
   const startIdx = edit.startLine - 1;
@@ -438,9 +726,34 @@ export function surgicalEditToPendingFormat(
 
 /**
  * Check if model output contains surgical edit markers
+ * Now also returns true if only the start marker is present (for incomplete outputs)
  */
 export function containsSurgicalEdits(output: string): boolean {
-  return (
-    output.includes(SURGICAL_EDIT_START) && output.includes(SURGICAL_EDIT_END)
-  );
+  // Check for complete blocks first
+  if (
+    output.includes(SURGICAL_EDIT_START) &&
+    output.includes(SURGICAL_EDIT_END)
+  ) {
+    return true;
+  }
+
+  // Also check for incomplete blocks (start marker with JSON-like content)
+  if (output.includes(SURGICAL_EDIT_START)) {
+    const startIndex = output.indexOf(SURGICAL_EDIT_START);
+    const afterMarker = output
+      .substring(startIndex + SURGICAL_EDIT_START.length)
+      .trim();
+    // Check if there's JSON-like content after the marker
+    if (afterMarker.startsWith("[") || afterMarker.startsWith("{")) {
+      // Check for operation keyword to confirm it's a surgical edit
+      if (afterMarker.includes('"operation"')) {
+        console.log(
+          "[SurgicalEdit] Found incomplete surgical edit block (missing closing marker)",
+        );
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
