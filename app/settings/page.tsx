@@ -170,7 +170,9 @@ function SettingsContent() {
   const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>(
     {},
   );
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [providerSearchQueries, setProviderSearchQueries] = useState<
+    Record<string, string>
+  >({});
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
     new Set(),
   );
@@ -386,10 +388,10 @@ function SettingsContent() {
     });
   };
 
-  // Filter models by search query
-  const filterModels = (models: AvailableModel[]) => {
-    if (!modelSearchQuery) return models;
-    const query = modelSearchQuery.toLowerCase();
+  // Filter models by search query for a specific provider
+  const filterModels = (models: AvailableModel[], providerId: string) => {
+    const query = providerSearchQueries[providerId]?.toLowerCase() || "";
+    if (!query) return models;
     return models.filter(
       (m) =>
         m.id.toLowerCase().includes(query) ||
@@ -897,17 +899,6 @@ function SettingsContent() {
                     </p>
                   </div>
 
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search models..."
-                      value={modelSearchQuery}
-                      onChange={(e) => setModelSearchQuery(e.target.value)}
-                      className="pl-10 bg-background/50"
-                    />
-                  </div>
-
                   {/* Selected models count */}
                   {enabledModels.length > 0 && (
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
@@ -938,7 +929,7 @@ function SettingsContent() {
                       const isConfigured = hasApiKeyConfigured(provider.id);
                       const isExpanded = expandedProviders.has(provider.id);
                       const models = availableModels[provider.id] || [];
-                      const filteredModels = filterModels(models);
+                      const filteredModels = filterModels(models, provider.id);
                       const isLoading = loadingModels[provider.id];
                       const enabledCount = enabledModels.filter(
                         (m) => m.provider === provider.id,
@@ -990,7 +981,25 @@ function SettingsContent() {
                           </button>
 
                           {isExpanded && isConfigured && (
-                            <div className="border-t border-border/50 p-4">
+                            <div className="border-t border-border/50 p-4 space-y-3">
+                              {/* Per-provider search */}
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  placeholder={`Search ${provider.name} models...`}
+                                  value={
+                                    providerSearchQueries[provider.id] || ""
+                                  }
+                                  onChange={(e) =>
+                                    setProviderSearchQueries((prev) => ({
+                                      ...prev,
+                                      [provider.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="pl-10 bg-background/50 h-9 text-sm"
+                                />
+                              </div>
+
                               {isLoading ? (
                                 <div className="flex items-center justify-center py-8">
                                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1000,12 +1009,12 @@ function SettingsContent() {
                                 </div>
                               ) : filteredModels.length === 0 ? (
                                 <div className="text-center py-8 text-muted-foreground text-sm">
-                                  {modelSearchQuery
+                                  {providerSearchQueries[provider.id]
                                     ? "No models match your search"
                                     : "No models available"}
                                 </div>
                               ) : (
-                                <div className="space-y-1 max-h-80 overflow-y-auto">
+                                <div className="space-y-1 max-h-72 overflow-y-auto">
                                   {filteredModels.map((model, index) => (
                                     <label
                                       key={`${model.id}-${index}`}
