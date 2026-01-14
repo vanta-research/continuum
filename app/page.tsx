@@ -242,10 +242,10 @@ function LoomContentIndicator({ content }: { content: string }) {
         </span>
       </button>
       {isExpanded && (
-        <div className="border-t border-primary/20 px-3 py-2 bg-background/50">
-          <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-auto font-mono">
-            {content}
-          </pre>
+        <div className="border-t border-primary/20 px-3 py-2 bg-background/50 max-h-64 overflow-auto">
+          <div className="prose prose-sm prose-invert dark:prose-invert max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
         </div>
       )}
     </div>
