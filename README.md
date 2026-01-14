@@ -1,31 +1,137 @@
-# VANTA Research Chat
+# Continuum
 
-A clean, professional, dark-mode optimized AI chat interface built with Next.js and shadcn/ui. Designed to connect to llama.cpp server for local AI inference.
+Continuum is a desktop AI chat application developed by VANTA Research. It provides a clean, professional interface for interacting with AI models, featuring project organization, document editing with AI collaboration, and a customizable One Dark-inspired theme.
 
 ## Features
 
-- Clean, minimal interface inspired by Apple design
-- Dark mode optimized with glassy, transparent elements
-- Real-time chat with AI assistant
-- Multiple chat sessions
-- Configurable LLaMA server connection
-- Model parameter controls (temperature, max tokens, streaming)
-- Responsive design
+### Chat Interface
+- Real-time streaming chat with AI models
+- Multiple chat sessions per project
+- Message editing and regeneration
+- Copy and delete message actions
+- Markdown rendering with syntax highlighting
+- File attachments and context sharing
 
-## Tech Stack
+### Project Management
+- Organize conversations into projects
+- Project-specific file storage
+- Session history per project
+- Create, rename, and delete projects
 
-- **Next.js 16** - React framework with App Router
-- **shadcn/ui** - Beautiful, accessible UI components
-- **Tailwind CSS** - Utility-first styling
-- **TypeScript** - Type safety
-- **Lucide Icons** - Clean, modern icons
+### Loom Editor
+- Side-by-side document editing with AI assistance
+- Real-time AI cursor tracking
+- Pending edit review system with accept/reject workflow
+- Auto-accept mode for faster collaboration
+- Edit and preview modes with live markdown rendering
+- File sidebar for project document management
 
-## Prerequisites
+### Model Support
+- Local models via llama.cpp server (Atom)
+- Mistral API integration
+- HuggingFace model downloading
+- Configurable temperature and token limits
 
-1. **Node.js 20+** and **npm**
-2. **llama.cpp server** running and accessible
+### Customization
+- One Dark theme with customizable accent colors
+- Five accent color options: Blue, Green, Purple, Red, Yellow
+- Persistent user preferences
 
-## Setup LLaMA Server
+### Web Search (Optional)
+- Real-time web search integration
+- Requires Google Custom Search API configuration
+
+## Technology
+
+- Next.js 16 with App Router
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- CodeMirror 6 for editors
+- Electron for desktop packaging
+- shadcn/ui components
+
+## Requirements
+
+- Node.js 20 or later
+- npm
+- For local models: llama.cpp server
+
+## Installation
+
+Clone the repository and install dependencies:
+
+```bash
+cd continuum
+npm install
+```
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env.local` file for core settings:
+
+```env
+LLAMA_SERVER_URL=http://localhost:8082
+```
+
+Create a `.env.search` file for optional web search:
+
+```env
+GOOGLE_API_KEY=your_google_api_key
+GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
+```
+
+### Settings Page
+
+Access the settings page to configure:
+
+- Model selection (Atom Local, Atom-Large-Experimental, Mistral API)
+- LLaMA server URL for local inference
+- Temperature and max token parameters
+- Response streaming toggle
+- Mistral API key
+- Accent color preference
+
+## Running the Application
+
+### Development Mode
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 in your browser.
+
+### Electron Development
+
+```bash
+npm run electron:dev
+```
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+### Electron Build
+
+Build for current platform:
+
+```bash
+npm run electron:build
+```
+
+Build for all platforms:
+
+```bash
+npm run electron:build:all
+```
+
+## Local Model Setup
 
 ### Install llama.cpp
 
@@ -35,190 +141,116 @@ cd llama.cpp
 make
 ```
 
-### Download a Model
+### Start the Server
 
 ```bash
-# Example: Download Llama 3.2 3B (4-bit quantized)
-wget https://huggingface.co/QuantFactory/Meta-Llama-3.2-3B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-3B-Instruct-Q4_K_M.gguf
-
-# Or download from Hugging Face:
-# https://huggingface.co/models?search=gguf
-```
-
-### Start LLaMA Server
-
-```bash
-./server --model Meta-Llama-3.2-3B-Instruct-Q4_K_M.gguf \
+./server --model your-model.gguf \
   --host 0.0.0.0 \
-  --port 8080 \
+  --port 8082 \
   --ctx-size 4096 \
-  --n-gpu-layers 35 \
-  --batch-size 512 \
-  --threads 8
+  --n-gpu-layers 35
 ```
 
-### Server Endpoints
+## Project Structure
 
-The llama.cpp server provides:
-- `POST /completion` - Generate completions
-- `POST /chat/completions` - OpenAI-compatible chat API
-- `GET /health` - Health check
-
-## Installation
-
-1. Clone repository
-2. Install dependencies
-3. Configure LLaMA server URL
-4. Start development server
-
-```bash
-# Install dependencies
-cd vanta-chat
-npm install
-
-# Start development server
-npm run dev
+```
+continuum/
+├── app/                    # Next.js app router pages
+│   ├── api/               # API routes
+│   │   ├── chat/          # Chat completion endpoint
+│   │   ├── memory/        # Memory/context management
+│   │   ├── models/        # Model management endpoints
+│   │   ├── projects/      # Project CRUD operations
+│   │   ├── search/        # Web search endpoint
+│   │   └── settings/      # Settings persistence
+│   ├── memory/            # Memory page
+│   └── settings/          # Settings page
+├── components/
+│   ├── canvas/            # Canvas editor components
+│   ├── loom/              # Loom editor components
+│   ├── projects/          # Project management components
+│   └── ui/                # shadcn/ui components
+├── lib/                   # Utility functions and types
+├── data/                  # Local data storage
+└── electron/              # Electron main process
 ```
 
-## Configuration
+## API Endpoints
 
-### Environment Variables
+### Chat
 
-Create a `.env.local` file in root directory:
+```
+POST /api/chat
+```
 
-```env
-LLAMA_SERVER_URL=http://localhost:8082
+Send messages to the AI model. Supports streaming responses.
+
+### Projects
+
+```
+GET    /api/projects              # List all projects
+POST   /api/projects              # Create project
+GET    /api/projects/[id]         # Get project details
+PUT    /api/projects/[id]         # Update project
+DELETE /api/projects/[id]         # Delete project
+```
+
+### Sessions
+
+```
+GET    /api/projects/[id]/sessions           # List sessions
+POST   /api/projects/[id]/sessions           # Create session
+GET    /api/projects/[id]/sessions/[sid]     # Get session
+PUT    /api/projects/[id]/sessions/[sid]     # Update session
+DELETE /api/projects/[id]/sessions/[sid]     # Delete session
+```
+
+### Files
+
+```
+GET    /api/projects/[id]/files              # List files
+POST   /api/projects/[id]/files              # Upload file
+GET    /api/projects/[id]/files/[fid]        # Get file
+PATCH  /api/projects/[id]/files/[fid]        # Update file
+DELETE /api/projects/[id]/files/[fid]        # Delete file
 ```
 
 ### Settings
 
-Access `/settings` page to configure:
-- LLaMA server URL
-- Temperature (0-2)
-- Max tokens (256-8192)
-- Stream responses toggle
-
-## Usage
-
-1. Open `http://localhost:3000` in your browser
-2. Click "New Chat" to start a conversation
-3. Type your message and press Enter
-4. View AI's response in real-time
-
-### Features
-
-- **Sidebar**: Chat history and navigation
-- **Multiple Sessions**: Keep multiple conversations
-- **Settings**: Configure model parameters
-- **Glass Effects**: Beautiful blur effects for modern look
-- **Responsive**: Works on desktop and mobile
-
-## API Endpoints
-
-### `/api/chat`
-Send a message to LLaMA server.
-
-```bash
-POST /api/chat
-Content-Type: application/json
-
-{
-  "message": "Hello!",
-  "sessionId": "session-id"
-}
+```
+GET  /api/settings    # Load settings
+POST /api/settings    # Save settings
 ```
 
-### `/api/settings`
-Save configuration settings.
+### Models
 
-```bash
-POST /api/settings
-Content-Type: application/json
-
-{
-  "serverUrl": "http://localhost:8082",
-  "temperature": 0.7,
-  "maxTokens": 2048,
-  "streamResponse": true
-}
 ```
-
-### `/api/test-connection`
-Test connection to LLaMA server.
-
-```bash
-POST /api/test-connection
-Content-Type: application/json
-
-{
-  "serverUrl": "http://localhost:8082"
-}
-```
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-```
-
-## Production Deployment
-
-1. Build the application
-2. Set environment variables
-3. Start the production server
-
-```bash
-npm run build
-export LLAMA_SERVER_URL=https://your-llama-server.com
-npm start
+GET  /api/models/available       # List available HuggingFace models
+GET  /api/models/local           # List downloaded models
+POST /api/models/download        # Download a model
+POST /api/models/validate-token  # Validate HuggingFace token
 ```
 
 ## Troubleshooting
 
 ### Connection Failed
 
-- Ensure LLaMA server is running
-- Check the URL in Settings
-- Verify firewall/network settings
+Verify that the llama.cpp server is running and accessible at the configured URL. Check firewall settings if running on a different machine.
 
 ### Slow Responses
 
-- Reduce `max_tokens` setting
-- Lower context size in LLaMA server
-- Use a smaller model or higher quantization
+Reduce the max tokens setting or use a smaller quantized model. Ensure GPU acceleration is properly configured in llama.cpp.
 
-### GPU Not Used
+### Model Not Loading
 
-- Install CUDA toolkit for NVIDIA GPUs
-- Use Metal (MPS) for Apple Silicon
-- Set `--n-gpu-layers` when starting LLaMA server
-
-## Design Philosophy
-
-This interface is designed with:
-- **Minimalism**: Only essential features
-- **Clarity**: Clear typography and spacing
-- **Performance**: Fast, lightweight interactions
-- **Accessibility**: Keyboard navigation and screen reader support
-- **Dark Mode**: Optimized for comfortable viewing
+Confirm the model file path is correct and the file is not corrupted. Check available system memory and VRAM.
 
 ## License
 
-MIT License - Feel free to use and modify for your projects.
+MIT License
 
 ## Credits
 
-- **Next.js** - React framework
-- **shadcn/ui** - UI component library
-- **llama.cpp** - LLaMA inference backend
-- **VANTA Research** - Branding and design direction
+Developed by VANTA Research.
+
+Built with Next.js, React, Tailwind CSS, shadcn/ui, CodeMirror, and Electron.
