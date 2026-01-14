@@ -2,14 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import MemorySystem from "@/lib/memory";
 import path from "path";
 import fs from "fs";
-import {
-  type ChatGPTCredentials,
-  isTokenExpired,
-  refreshAccessToken,
-  tokensToCredentials,
-  buildChatGPTHeaders,
-  CHATGPT_API_CONFIG,
-} from "@/lib/chatgpt-auth";
 
 const LLAMA_SERVER_URL =
   process.env.LLAMA_SERVER_URL || "http://localhost:8082";
@@ -40,8 +32,6 @@ interface AppSettings {
   customEndpointApiKey?: string;
   customEndpointModelId?: string;
   hfToken?: string;
-  chatgptCredentials?: ChatGPTCredentials;
-  chatgptModelId?: string;
 }
 
 // Load settings from file to get API keys
@@ -92,61 +82,6 @@ function getCustomEndpointConfig(): {
     modelId:
       settings.customEndpointModelId || process.env.CUSTOM_ENDPOINT_MODEL_ID,
   };
-}
-
-/**
- * Get ChatGPT credentials and refresh if needed
- */
-async function getChatGPTCredentials(): Promise<ChatGPTCredentials | null> {
-  const settings = loadSettings();
-  const credentials = settings.chatgptCredentials;
-
-  if (!credentials) {
-    return null;
-  }
-
-  // Check if token needs refresh
-  if (isTokenExpired(credentials)) {
-    console.log("[ChatGPT] Access token expired, refreshing...");
-    try {
-      const newTokens = await refreshAccessToken(credentials.refreshToken);
-      const newCredentials = tokensToCredentials(newTokens);
-
-      // Update stored credentials
-      const updatedCredentials: ChatGPTCredentials = {
-        accessToken: newCredentials.accessToken,
-        refreshToken: newCredentials.refreshToken,
-        expiresAt: newCredentials.expiresAt,
-        accountId: newCredentials.accountId || credentials.accountId,
-        email: newCredentials.email || credentials.email,
-      };
-
-      // Save to settings file
-      const settingsPath = path.join(process.cwd(), "data", "settings.json");
-      const currentSettings = {
-        ...settings,
-        chatgptCredentials: updatedCredentials,
-      };
-      fs.writeFileSync(
-        settingsPath,
-        JSON.stringify(currentSettings, null, 2),
-        "utf-8",
-      );
-
-      console.log("[ChatGPT] Token refreshed successfully");
-      return updatedCredentials;
-    } catch (error) {
-      console.error("[ChatGPT] Failed to refresh token:", error);
-      return null;
-    }
-  }
-
-  return credentials;
-}
-
-function getChatGPTModelId(): string {
-  const settings = loadSettings();
-  return settings.chatgptModelId || "gpt-5.1-codex";
 }
 
 interface CompletionRequest {
@@ -844,75 +779,6 @@ async function streamCustomEndpointResponse(
 }
 
 /**
- * Stream response from ChatGPT backend API (Codex)
- * Uses OAuth credentials from ChatGPT Plus/Pro subscription
- */
-async function streamChatGPTResponse(
-  messages: Array<{ role: string; content: string | object[] }>,
-) {
-  const credentials = await getChatGPTCredentials();
-
-  if (!credentials) {
-    throw new Error(
-      "ChatGPT not connected. Please login with your ChatGPT Plus/Pro account in Settings.",
-    );
-  }
-
-  const modelId = getChatGPTModelId();
-  const headers = buildChatGPTHeaders(
-    credentials.accessToken,
-    credentials.accountId,
-  );
-
-  // Build the request body for ChatGPT backend API
-  // The Codex API uses a slightly different format
-  const requestBody = {
-    model: modelId,
-    messages: messages.map((m) => ({
-      role: m.role,
-      content:
-        typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-    })),
-    stream: true,
-    temperature: 0.7,
-    max_tokens: 4096,
-  };
-
-  const chatgptUrl = `${CHATGPT_API_CONFIG.baseUrl}${CHATGPT_API_CONFIG.codexResponsesPath}`;
-
-  console.log("[ChatGPT] Sending request to:", chatgptUrl);
-  console.log("[ChatGPT] Using model:", modelId);
-
-  const chatgptResponse = await fetch(chatgptUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!chatgptResponse.ok) {
-    const errorText = await chatgptResponse.text();
-    console.error("ChatGPT API error:", chatgptResponse.status, errorText);
-
-    // Handle specific error cases
-    if (chatgptResponse.status === 401) {
-      throw new Error(
-        "ChatGPT authentication expired. Please re-login in Settings.",
-      );
-    }
-
-    if (chatgptResponse.status === 429) {
-      throw new Error("ChatGPT usage limit reached. Please try again later.");
-    }
-
-    throw new Error(
-      `ChatGPT API returned ${chatgptResponse.status}: ${errorText}`,
-    );
-  }
-
-  return chatgptResponse.body;
-}
-
-/**
  * Detect which local server is available (Ollama or llama.cpp)
  */
 async function detectLocalServer(): Promise<"ollama" | "llamacpp" | null> {
@@ -1386,11 +1252,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Route to the appropriate provider
-    if (model === "chatgpt") {
-      streamBody = await streamChatGPTResponse(messages);
-      // Mark as ChatGPT for SSE parsing (uses similar format to OpenAI)
-      (streamBody as any).__serverType = "chatgpt";
-    } else if (model === "openai") {
+    if (model === "openai") {
       streamBody = await streamOpenAIResponse(messages);
     } else if (model === "anthropic") {
       // Anthropic needs system prompt passed separately

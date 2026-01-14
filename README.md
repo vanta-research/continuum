@@ -111,15 +111,13 @@ That shouldn't live on someone else's servers.
 
 Or connect to cloud APIs when you need more capability. The architecture supports both. The choice is always yours.
 
-### ChatGPT Plus/Pro Integration
+### OpenAI API Integration
 
-Already have a ChatGPT subscription? Use it directly in Continuum.
+Already have OpenAI API access? Use your API key directly in Continuum.
 
-- **GPT-5.x & Codex models** — Access the latest models via your existing subscription
-- **OAuth login** — No API key needed, just sign in with your ChatGPT account
-- **Same flow as Codex CLI** — Uses OpenAI's official OAuth authentication
-
-Settings → ChatGPT → Login. That's it.
+- **GPT-4o and friends** — Access the latest OpenAI models with your key
+- **Straightforward setup** — Settings → OpenAI → paste your `sk-...` key
+- **No OAuth required** — Keys stay local to your machine
 
 **Your mind, your rules.**
 
@@ -333,16 +331,6 @@ MIT — Use it. Modify it. Make it yours.
 ---
 
 ## Usage Notices
-
-### ChatGPT OAuth Authentication
-
-Continuum's ChatGPT integration uses the same OAuth flow as [OpenAI's official Codex CLI](https://github.com/openai/codex). This allows ChatGPT Plus/Pro subscribers to access GPT-5.x and Codex models through their existing subscription.
-
-**Important:** This feature is intended for personal development and creative work with your own ChatGPT subscription. Users are responsible for ensuring their usage complies with [OpenAI's Terms of Use](https://openai.com/policies/terms-of-use/) and [Usage Policies](https://openai.com/policies/usage-policies/).
-
-For commercial applications, high-volume usage, or multi-user deployments, please use the [OpenAI Platform API](https://platform.openai.com/) with appropriate API keys.
-
----
 
 <p align="center">
   <em>"The tools we use shape the thoughts we think."</em>

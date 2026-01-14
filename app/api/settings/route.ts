@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import type { ChatGPTCredentials } from "@/lib/chatgpt-auth";
 
 interface Settings {
   // Server configuration
@@ -24,10 +23,6 @@ interface Settings {
   customEndpointUrl: string;
   customEndpointApiKey: string;
   customEndpointModelId: string;
-
-  // ChatGPT OAuth credentials
-  chatgptCredentials?: ChatGPTCredentials;
-  chatgptModelId?: string;
 }
 
 const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
@@ -65,8 +60,6 @@ function loadSettings(): Settings {
     customEndpointUrl: "",
     customEndpointApiKey: "",
     customEndpointModelId: "",
-    chatgptCredentials: undefined,
-    chatgptModelId: "gpt-5.1-codex",
   };
 }
 
