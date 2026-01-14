@@ -393,8 +393,52 @@ export function parseAddFileMarkers(content: string): ParsedAddFile {
  * Clean ADD_FILE markers from text for display during streaming.
  */
 export function cleanAddFileMarkers(text: string): string {
-  let cleaned = text.replace(/\[ADD_FILE\][\s\S]*?\[\/ADD_FILE\]/g, "");
+  // Debug: check if markers are present
+  const hasAddFile = text.includes("[ADD_FILE]");
+  const hasCloseAddFile = text.includes("[/ADD_FILE]");
+
+  if (hasAddFile || hasCloseAddFile) {
+    console.log("[cleanAddFileMarkers] Input contains markers:", {
+      hasAddFile,
+      hasCloseAddFile,
+      textLength: text.length,
+      preview: text.substring(0, 200),
+    });
+  }
+
+  // Try multiple patterns to catch different formatting variations
+  // Pattern 1: Standard complete block with flexible whitespace
+  let cleaned = text.replace(/\[ADD_FILE\][\s\S]*?\[\/ADD_FILE\]/gi, "");
+
+  if (hasAddFile && cleaned !== text) {
+    console.log("[cleanAddFileMarkers] Pattern 1 matched, removed block");
+  }
+
+  // Pattern 2: Block with potential unicode/zero-width characters around tags
+  const beforeP2 = cleaned;
+  cleaned = cleaned.replace(
+    /\[ADD_FILE\s*\][\s\S]*?\[\s*\/\s*ADD_FILE\s*\]/gi,
+    "",
+  );
+  if (cleaned !== beforeP2) {
+    console.log("[cleanAddFileMarkers] Pattern 2 matched");
+  }
+
+  // Pattern 3: Just the markers without proper JSON (malformed)
+  const beforeP3 = cleaned;
+  cleaned = cleaned.replace(/\[ADD_FILE[^\[]*\[\/ADD_FILE\]/gi, "");
+  if (cleaned !== beforeP3) {
+    console.log("[cleanAddFileMarkers] Pattern 3 matched");
+  }
+
+  // Pattern 4: Incomplete block at end (no closing tag yet)
+  const beforeP4 = cleaned;
   cleaned = cleaned.replace(/\[ADD_FILE\][\s\S]*$/, "");
+  if (cleaned !== beforeP4) {
+    console.log("[cleanAddFileMarkers] Pattern 4 matched (incomplete block)");
+  }
+
+  // Pattern 5: Partial opening markers at end of string
   cleaned = cleaned.replace(/\[ADD_FILE[^\]]*$/, "");
   cleaned = cleaned.replace(/\[ADD_FIL[^\]]*$/, "");
   cleaned = cleaned.replace(/\[ADD_FI[^\]]*$/, "");
@@ -403,5 +447,31 @@ export function cleanAddFileMarkers(text: string): string {
   cleaned = cleaned.replace(/\[ADD[^\]]*$/, "");
   cleaned = cleaned.replace(/\[AD[^\]]*$/, "");
   cleaned = cleaned.replace(/\[A[^\]]*$/, "");
+
+  // Final fallback: if markers are STILL present, forcefully remove them line by line
+  if (cleaned.includes("[ADD_FILE]") || cleaned.includes("[/ADD_FILE]")) {
+    console.log(
+      "[cleanAddFileMarkers] Markers still present after regex, using line-by-line fallback",
+    );
+    const lines = cleaned.split("\n");
+    const filteredLines: string[] = [];
+    let inAddFileBlock = false;
+
+    for (const line of lines) {
+      if (line.includes("[ADD_FILE]")) {
+        inAddFileBlock = true;
+        continue;
+      }
+      if (line.includes("[/ADD_FILE]")) {
+        inAddFileBlock = false;
+        continue;
+      }
+      if (!inAddFileBlock) {
+        filteredLines.push(line);
+      }
+    }
+    cleaned = filteredLines.join("\n");
+  }
+
   return cleaned.trim();
 }

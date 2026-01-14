@@ -1223,10 +1223,14 @@ export async function POST(request: NextRequest) {
       (streamBody as any).__serverType = "anthropic";
     } else if (model === "openrouter") {
       streamBody = await streamOpenRouterResponse(messages);
+      // Mark as OpenRouter (OpenAI-compatible) for response parsing
+      (streamBody as any).__serverType = "openrouter";
     } else if (model.startsWith("openrouter:")) {
       // Handle specific OpenRouter models
       const modelId = model.replace("openrouter:", "");
       streamBody = await streamOpenRouterResponse(messages, modelId);
+      // Mark as OpenRouter (OpenAI-compatible) for response parsing
+      (streamBody as any).__serverType = "openrouter";
     } else if (model === "custom") {
       streamBody = await streamCustomEndpointResponse(messages);
     } else if (
@@ -1284,6 +1288,17 @@ export async function POST(request: NextRequest) {
             const serverType = (streamBody as any)?.__serverType;
             const isOllama = serverType === "ollama";
             const isAnthropic = serverType === "anthropic";
+            const isOpenRouter = serverType === "openrouter";
+
+            // Debug: log server type on first chunk
+            if (lines.length > 0) {
+              console.log(
+                "[Loom Conversion] Processing chunk, serverType:",
+                serverType,
+                "loomEnabled:",
+                loomEnabled,
+              );
+            }
 
             // Handle different streaming formats
             if (isAnthropic) {
@@ -1333,7 +1348,7 @@ export async function POST(request: NextRequest) {
                 }
               }
             } else if (!isOllama) {
-              // OpenAI-compatible format (llama.cpp, Mistral)
+              // OpenAI-compatible format (OpenRouter, llama.cpp, Mistral, OpenAI)
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
@@ -1347,6 +1362,21 @@ export async function POST(request: NextRequest) {
                   try {
                     const parsed = JSON.parse(data);
                     let content = parsed.choices?.[0]?.delta?.content;
+
+                    // Debug: log when we see ADD_FILE markers
+                    if (
+                      content &&
+                      (content.includes("[ADD_FILE]") ||
+                        content.includes("[/ADD_FILE]"))
+                    ) {
+                      console.log(
+                        "[Loom Conversion] Found ADD_FILE in chunk, loomEnabled:",
+                        loomEnabled,
+                        "content preview:",
+                        content.substring(0, 100),
+                      );
+                    }
+
                     if (content) {
                       // Debug: log raw content chunks that contain ADD_FILE
                       if (
