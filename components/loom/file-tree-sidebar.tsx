@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   FileText,
   Image,
@@ -55,25 +56,41 @@ interface ContextMenuProps {
 
 function ContextMenu({ x, y, onClose, children }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
 
   React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    // Small delay to prevent the opening click from immediately closing the menu
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 10);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [onClose]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[140px] bg-zinc-900 border border-white/10 rounded-md shadow-lg py-1"
+      className="fixed z-[9999] min-w-[140px] bg-zinc-900 border border-white/10 rounded-md shadow-lg py-1"
       style={{ left: x, top: y }}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -216,6 +233,7 @@ function FileTreeItem({
           <span className="text-xs truncate flex-1 ml-1">{node.name}</span>
 
           <button
+            type="button"
             className="p-0.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             onClick={(e) => {
               e.stopPropagation();
