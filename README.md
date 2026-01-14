@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Not a chat app. Not an editor. A space where thinking happens—<br/>
+  A workspace where thinking happens—<br/>
   with artificial intelligence woven into every layer.
 </p>
 
@@ -150,7 +150,7 @@ npm run electron:dev
 
 ### Local AI (Optional)
 
-For complete cognitive sovereignty:
+For absolute security:
 
 1. **Set up llama.cpp**
    ```bash
@@ -159,7 +159,7 @@ For complete cognitive sovereignty:
    make
    ```
 
-2. **Download a model** — [Mistral 7B Instruct](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF) is a great start
+2. **Download a model** — [Atom-Olmo3-7B](https://huggingface.co/mradermacher/atom-olmo3-7b-GGUF) is a great start
 
 3. **Run the server**
    ```bash
