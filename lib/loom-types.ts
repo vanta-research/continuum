@@ -123,7 +123,8 @@ export type LoomAction =
   | { type: "MODIFY_PENDING_EDIT"; payload: { id: string; newContent: string } }
   | { type: "CLEAR_PENDING_EDITS" }
   | { type: "SET_AUTO_ACCEPT_EDITS"; payload: boolean }
-  | { type: "CLEAR_EDIT_HISTORY" };
+  | { type: "CLEAR_EDIT_HISTORY" }
+  | { type: "UNDO_LAST_EDIT" };
 
 export interface LoomContextValue {
   state: LoomState;
@@ -163,6 +164,7 @@ export interface LoomContextValue {
   clearPendingEdits: () => void;
   setAutoAcceptEdits: (enabled: boolean) => void;
   clearEditHistory: () => void;
+  undoLastEdit: () => void;
 }
 
 // Edit marker types for parsing model responses

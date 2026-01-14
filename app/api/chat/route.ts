@@ -321,8 +321,9 @@ Done! character-outline.md has been saved to your workspace."
 }
 
 // Thresholds for switching to surgical edit mode
-const LARGE_DOC_LINE_THRESHOLD = 100;
-const LARGE_DOC_CHAR_THRESHOLD = 5000;
+// Set higher to give simpler models the easier full-document instructions more often
+const LARGE_DOC_LINE_THRESHOLD = 200;
+const LARGE_DOC_CHAR_THRESHOLD = 10000;
 
 function buildLoomInstructions(loomContext: LoomContext): string {
   const isEmpty = !loomContext.content || loomContext.content.trim() === "";
@@ -356,85 +357,26 @@ function buildSurgicalLoomInstructions(
 
   let documentPreview = "";
   if (lineCount <= previewLines + endLines + 5) {
-    // Small enough to show everything
     documentPreview = content;
   } else {
     const startSection = lines.slice(0, previewLines).join("\n");
     const endSection = lines.slice(-endLines).join("\n");
     const middleCount = lineCount - previewLines - endLines;
-    documentPreview = `${startSection}\n\n[... ${middleCount} lines omitted for brevity ...]\n\n${endSection}`;
+    documentPreview = `${startSection}\n\n[... ${middleCount} lines omitted ...]\n\n${endSection}`;
   }
 
   return `
+## LOOM MODE (${lineCount} lines)
 
-## LOOM MODE ACTIVE - LARGE DOCUMENT (${lineCount} lines)
-The document is large, so use SURGICAL EDITS to save tokens and be precise.
+To append content, use: [SURGICAL_EDIT]{"operation": "insert", "startLine": ${lineCount + 1}, "content": "your content here"}[/SURGICAL_EDIT]
+To replace lines 10-12: [SURGICAL_EDIT]{"operation": "replace", "startLine": 10, "endLine": 12, "content": "new text"}[/SURGICAL_EDIT]
 
-### SURGICAL EDIT FORMAT:
-Use [SURGICAL_EDIT] markers for targeted changes:
-
-[SURGICAL_EDIT]
-{
-  "operation": "replace",
-  "startLine": 45,
-  "endLine": 48,
-  "content": "new content for lines 45-48\\ncan span multiple lines"
-}
-[/SURGICAL_EDIT]
-
-### Operations:
-- **replace**: Replace lines startLine through endLine with new content
-- **insert**: Insert new content BEFORE startLine (existing lines shift down)
-- **delete**: Delete lines startLine through endLine
-
-### Multiple edits in one response:
-[SURGICAL_EDIT]
-[
-  {"operation": "replace", "startLine": 10, "endLine": 12, "content": "new text here"},
-  {"operation": "insert", "startLine": 25, "content": "inserted line"},
-  {"operation": "delete", "startLine": 30, "endLine": 32}
-]
-[/SURGICAL_EDIT]
-
-### Rules:
-- Line numbers are 1-indexed (first line is line 1)
-- Use \\n for newlines within content strings
-- Edits are applied bottom-to-top, so line numbers stay valid
-- Be precise with line numbers - check the document preview below
-
-### WHEN TO USE SURGICAL EDITS:
-- Modifying specific sections
-- Adding content at specific locations
-- Fixing typos or small changes
-- Any targeted edit
-
-### WHEN TO USE FULL REPLACEMENT (fallback):
-Only if rewriting most of the document. Use [ADD_FILE] with complete content.
-
-### DOCUMENT PREVIEW (${lineCount} lines total):
+Document:
 \`\`\`
 ${documentPreview}
 \`\`\`
-${loomContext.selectedText ? `\n**User has selected:** "${loomContext.selectedText}"` : ""}
 
-### CRITICAL: INTENT DETECTION - WHEN TO EDIT vs DISCUSS
-
-**ONLY EDIT THE LOOM** when the user uses ACTION/COMMITMENT language like:
-- "add this", "write it", "put that in", "go ahead", "do it", "make it so"
-- "update the loom", "add to the document", "write this to the loom"
-- "let's go with that", "sounds good, add it", "yes, write that"
-- "create", "insert", "append", "include this"
-
-**RESPOND IN CHAT (DO NOT EDIT)** when the user uses EXPLORATORY/QUESTION language like:
-- "what do you think?", "what could we?", "how about?", "what if?"
-- "can you suggest?", "ideas for?", "brainstorm", "let's discuss"
-- "tell me about", "explain", "analyze", "review"
-- "maybe we could?", "I'm thinking about", "considering"
-- Any question about the document content
-
-**WHEN IN DOUBT**: Present your ideas in chat first and ask: "Would you like me to add this to the Loom?"
-
-This distinction is crucial - the user wants to brainstorm and discuss ideas BEFORE committing them to the document.
+Only use [SURGICAL_EDIT] when user wants to write/add. For questions or discussion, just chat normally.
 `;
 }
 
@@ -442,50 +384,24 @@ function buildFullDocumentLoomInstructions(
   loomContext: LoomContext,
   isEmpty: boolean,
 ): string {
+  const existingContent = loomContext.content || "";
+  const lineCount = existingContent.split("\n").length;
+
   return `
+## LOOM MODE ACTIVE
 
-## LOOM MODE ACTIVE - DOCUMENT EDITOR
-The user has a document editor called "Loom" open. You can write to it using [ADD_FILE] markers.
-
-### HOW TO WRITE TO THE LOOM:
-When editing the Loom, you must output the COMPLETE new version of the document.
-The system will automatically show a diff of what changed.
-
+To write to the document, use this format:
 [ADD_FILE]
 {
-  "content": "THE COMPLETE DOCUMENT CONTENT HERE"
+  "content": "COMPLETE document content with \\n for newlines"
 }
 [/ADD_FILE]
 
-**IMPORTANT**: Always include the ENTIRE document in your response, not just the new parts.
-- If adding to a document: include existing content + new content
-- If editing a document: include the full updated document
-- If replacing a document: include the complete new document
+${isEmpty ? "Document is empty." : `Document (${lineCount} lines):\n\`\`\`\n${existingContent}\n\`\`\``}
 
-### CRITICAL: INTENT DETECTION - WHEN TO EDIT vs DISCUSS
+${!isEmpty ? "**To add content**: Include ALL existing content above + your new content in the [ADD_FILE] block." : ""}
 
-**ONLY EDIT THE LOOM** when the user uses ACTION/COMMITMENT language like:
-- "add this", "write it", "put that in", "go ahead", "do it", "make it so"
-- "update the loom", "add to the document", "write this to the loom"
-- "let's go with that", "sounds good, add it", "yes, write that"
-- "create", "insert", "append", "include this"
-
-**RESPOND IN CHAT (DO NOT EDIT)** when the user uses EXPLORATORY/QUESTION language like:
-- "what do you think?", "what could we?", "how about?", "what if?"
-- "can you suggest?", "ideas for?", "brainstorm", "let's discuss"
-- "tell me about", "explain", "analyze", "review"
-- "maybe we could?", "I'm thinking about", "considering"
-- Any question about the document content
-
-**WHEN IN DOUBT**: Present your ideas in chat first and ask: "Would you like me to add this to the Loom?"
-
-This distinction is crucial - the user wants to brainstorm and discuss ideas BEFORE committing them to the document.
-
-### CURRENT DOCUMENT STATE:
-${isEmpty ? "(The document is currently empty)" : `The document currently contains:\n---\n${loomContext.content}\n---`}
-${loomContext.selectedText ? `\nUser has selected: "${loomContext.selectedText}"` : ""}
-
-${!isEmpty ? `When the user asks to ADD content, include the existing content above PLUS the new content in your response.` : ""}
+Only use [ADD_FILE] when user wants to write/add. For questions or discussion, just chat normally.
 `;
 }
 
@@ -1069,19 +985,39 @@ function convertAddFileToCanvasEdit(
       }
 
       // Emit the extracted content (or empty if extraction failed)
-      if (extractedContent) {
+      // Also reject known placeholder text that models sometimes output literally
+      const isPlaceholderText =
+        extractedContent.trim() === "THE COMPLETE DOCUMENT CONTENT HERE" ||
+        extractedContent.trim() ===
+          "Your file content here with newlines as \\n" ||
+        extractedContent.trim().startsWith("THE COMPLETE DOCUMENT") ||
+        extractedContent.trim() ===
+          "...your actual document content goes here..." ||
+        extractedContent.trim().startsWith("...your actual document");
+
+      if (extractedContent && !isPlaceholderText) {
         output += extractedContent;
+        output += "[CANVAS_EDIT_END]";
         console.log(
           "[Loom Conversion] Successfully converted ADD_FILE to CANVAS_EDIT",
+        );
+      } else if (isPlaceholderText) {
+        console.log(
+          "[Loom Conversion] Rejected placeholder text - model didn't replace example content",
+        );
+        // Skip the entire edit block - remove the start marker we already emitted
+        // by replacing it with a warning message to the user
+        output = output.replace(
+          /\[CANVAS_EDIT_START:1\]$/,
+          "\n\n⚠️ *The model output placeholder text instead of actual content. Please try again or use a different model.*\n\n",
         );
       } else {
         console.log(
           "[Loom Conversion] Failed to extract content, buffer preview:",
           jsonContent.substring(0, 200),
         );
+        output += "[CANVAS_EDIT_END]";
       }
-
-      output += "[CANVAS_EDIT_END]";
       newBuffer = afterEnd;
       newInAddFile = false;
       console.log("[Loom Conversion] Conversion complete, state reset");

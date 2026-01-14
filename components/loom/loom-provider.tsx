@@ -378,6 +378,46 @@ function loomReducer(state: LoomState, action: LoomAction): LoomState {
         autoAcceptEdits: action.payload,
       };
 
+    case "UNDO_LAST_EDIT": {
+      // Find the last accepted edit in history
+      const lastAcceptedIndex = [...state.editHistory]
+        .reverse()
+        .findIndex((entry) => entry.action === "accepted");
+
+      if (lastAcceptedIndex === -1 || !state.document) return state;
+
+      // Convert reverse index to actual index
+      const actualIndex = state.editHistory.length - 1 - lastAcceptedIndex;
+      const lastAccepted = state.editHistory[actualIndex];
+
+      // Restore the original content by replacing the new content with original
+      const lines = state.document.content.split("\n");
+      const targetLine = lastAccepted.edit.targetLine;
+      const newContentLineCount =
+        lastAccepted.edit.newContent.split("\n").length;
+
+      // Remove the lines that were added and restore original
+      const newLines = [
+        ...lines.slice(0, targetLine - 1),
+        lastAccepted.edit.originalContent,
+        ...lines.slice(targetLine - 1 + newContentLineCount),
+      ];
+
+      // Remove this entry from history
+      const newHistory = state.editHistory.filter((_, i) => i !== actualIndex);
+
+      return {
+        ...state,
+        document: {
+          ...state.document,
+          content: newLines.join("\n"),
+          updatedAt: new Date(),
+          lastModifiedBy: "user" as ModifiedBy,
+        },
+        editHistory: newHistory,
+      };
+    }
+
     case "CLEAR_EDIT_HISTORY":
       return {
         ...state,
@@ -606,6 +646,10 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "CLEAR_EDIT_HISTORY" });
   }, []);
 
+  const undoLastEdit = useCallback(() => {
+    dispatch({ type: "UNDO_LAST_EDIT" });
+  }, []);
+
   const value: LoomContextValue = {
     state,
     dispatch,
@@ -636,6 +680,7 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
     clearPendingEdits,
     setAutoAcceptEdits,
     clearEditHistory,
+    undoLastEdit,
   };
 
   return <LoomContext.Provider value={value}>{children}</LoomContext.Provider>;

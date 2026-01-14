@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Send,
+  Square,
   Settings,
   MessageSquare,
   Plus,
@@ -384,6 +385,7 @@ function ChatInterfaceInner() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Function to fetch enabled models from settings
   const fetchEnabledModels = useCallback(async () => {
@@ -574,6 +576,9 @@ function ChatInterfaceInner() {
     setAttachments([]);
     setIsLoading(true);
 
+    // Re-focus the textarea so user can keep typing
+    textareaRef.current?.focus();
+
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: "assistant",
@@ -620,6 +625,9 @@ function ChatInterfaceInner() {
             : 0,
       });
 
+      // Create abort controller for this request
+      abortControllerRef.current = new AbortController();
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -638,6 +646,7 @@ function ChatInterfaceInner() {
           })),
           ...loomPayload,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -1248,6 +1257,15 @@ function ChatInterfaceInner() {
       });
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  // Stop generation handler
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
   };
 
@@ -1953,16 +1971,25 @@ function ChatInterfaceInner() {
                         disabled={isLoading}
                       />
                     </div>
-                    <Button
-                      onClick={handleSendMessage}
-                      disabled={
-                        (!input.trim() && attachments.length === 0) || isLoading
-                      }
-                      className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
-                      size="icon"
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
+                    {isLoading ? (
+                      <Button
+                        onClick={handleStopGeneration}
+                        className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
+                        size="icon"
+                        title="Stop generation"
+                      >
+                        <Square className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleSendMessage}
+                        disabled={!input.trim() && attachments.length === 0}
+                        className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
+                        size="icon"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2171,16 +2198,25 @@ function ChatInterfaceInner() {
                       disabled={isLoading}
                     />
                   </div>
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={
-                      (!input.trim() && attachments.length === 0) || isLoading
-                    }
-                    className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
-                    size="icon"
-                  >
-                    <Send className="h-5 w-5" />
-                  </Button>
+                  {isLoading ? (
+                    <Button
+                      onClick={handleStopGeneration}
+                      className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
+                      size="icon"
+                      title="Stop generation"
+                    >
+                      <Square className="h-5 w-5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={!input.trim() && attachments.length === 0}
+                      className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
+                      size="icon"
+                    >
+                      <Send className="h-5 w-5" />
+                    </Button>
+                  )}
                 </div>
                 <p className="text-center text-xs text-muted-foreground/70">
                   VANTA Research - AI for humans

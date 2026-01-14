@@ -15,6 +15,7 @@ import {
   FileType,
   FolderOpen,
   FolderX,
+  Undo2,
 } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -82,8 +83,12 @@ export function LoomToolbar({
   viewMode,
   onViewModeChange,
 }: LoomToolbarProps) {
-  const { state, updateDocumentTitle, setAutoAcceptEdits } = useLoom();
-  const { document, pendingEdits, autoAcceptEdits } = state;
+  const { state, updateDocumentTitle, setAutoAcceptEdits, undoLastEdit } =
+    useLoom();
+  const { document, pendingEdits, autoAcceptEdits, editHistory } = state;
+
+  // Check if there's an edit to undo (only accepted edits can be undone)
+  const canUndo = editHistory.some((entry) => entry.action === "accepted");
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(
@@ -312,6 +317,20 @@ export function LoomToolbar({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+
+          {/* Undo button */}
+          {canUndo && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 text-muted-foreground hover:text-foreground"
+              onClick={undoLastEdit}
+              title="Undo last accepted edit"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              <span className="text-xs">Undo</span>
+            </Button>
           )}
 
           {/* Auto-accept toggle */}
