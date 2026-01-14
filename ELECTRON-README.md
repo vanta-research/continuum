@@ -1,4 +1,4 @@
-# Continuum - Electron Desktop App
+I# Continuum - Electron Desktop App
 
 Continuum is now available as a standalone desktop application for Linux!
 

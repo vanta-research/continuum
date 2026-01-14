@@ -1,10 +1,15 @@
 {
   "projects": [
     {
+      "id": "proj_07628fed",
+      "name": "My Second Project",
+      "updatedAt": 1768372611384
+    },
+    {
       "id": "proj_5a68c081",
       "name": "My First Project",
-      "updatedAt": 1768369117728
+      "updatedAt": 1768372494264
     }
   ],
-  "activeProjectId": "proj_5a68c081"
+  "activeProjectId": "proj_07628fed"
 }
