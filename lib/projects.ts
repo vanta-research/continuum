@@ -1,13 +1,15 @@
-import fs from 'fs';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 import type {
   Project,
   ProjectFile,
+  ProjectFolder,
   ProjectSummary,
   ProjectsIndex,
   StoredSession,
-} from './project-types';
+  FileTreeNode,
+} from "./project-types";
 
 /**
  * ProjectSystem - Manages project storage following the MemorySystem pattern
@@ -25,8 +27,8 @@ class ProjectSystem {
   private indexFile: string;
 
   constructor() {
-    this.projectsDir = path.join(process.cwd(), 'data', 'projects');
-    this.indexFile = path.join(this.projectsDir, 'index.json');
+    this.projectsDir = path.join(process.cwd(), "data", "projects");
+    this.indexFile = path.join(this.projectsDir, "index.json");
     this.ensureDirectoryExists();
   }
 
@@ -45,11 +47,11 @@ class ProjectSystem {
   }
 
   private getProjectFile(projectId: string): string {
-    return path.join(this.getProjectDir(projectId), 'project.json');
+    return path.join(this.getProjectDir(projectId), "project.json");
   }
 
   private getFilesDir(projectId: string): string {
-    return path.join(this.getProjectDir(projectId), 'files');
+    return path.join(this.getProjectDir(projectId), "files");
   }
 
   // ============================================================
@@ -59,14 +61,14 @@ class ProjectSystem {
   loadIndex(): ProjectsIndex {
     try {
       if (fs.existsSync(this.indexFile)) {
-        const data = fs.readFileSync(this.indexFile, 'utf-8');
+        const data = fs.readFileSync(this.indexFile, "utf-8");
         const parsed = JSON.parse(data);
         // Handle legacy format where index.json was just an array
         if (Array.isArray(parsed)) {
           return { projects: parsed, activeProjectId: undefined };
         }
         // Ensure proper structure
-        if (parsed && typeof parsed === 'object') {
+        if (parsed && typeof parsed === "object") {
           return {
             projects: Array.isArray(parsed.projects) ? parsed.projects : [],
             activeProjectId: parsed.activeProjectId,
@@ -74,7 +76,7 @@ class ProjectSystem {
         }
       }
     } catch (error) {
-      console.error('Error loading projects index:', error);
+      console.error("Error loading projects index:", error);
     }
     return { projects: [], activeProjectId: undefined };
   }
@@ -82,9 +84,9 @@ class ProjectSystem {
   private saveIndex(index: ProjectsIndex): void {
     try {
       const data = JSON.stringify(index, null, 2);
-      fs.writeFileSync(this.indexFile, data, 'utf-8');
+      fs.writeFileSync(this.indexFile, data, "utf-8");
     } catch (error) {
-      console.error('Error saving projects index:', error);
+      console.error("Error saving projects index:", error);
     }
   }
 
@@ -95,7 +97,7 @@ class ProjectSystem {
   /**
    * Create a new project
    */
-  createProject(name: string, description: string = ''): Project {
+  createProject(name: string, description: string = ""): Project {
     const projectId = `proj_${uuidv4().slice(0, 8)}`;
     const now = Date.now();
 
@@ -107,7 +109,9 @@ class ProjectSystem {
       updatedAt: now,
       sessions: [],
       files: [],
+      folders: [],
       activeSessionId: undefined,
+      expandedFolders: [],
     };
 
     // Create project directory and files directory
@@ -142,7 +146,7 @@ class ProjectSystem {
     try {
       const projectFile = this.getProjectFile(projectId);
       if (fs.existsSync(projectFile)) {
-        const data = fs.readFileSync(projectFile, 'utf-8');
+        const data = fs.readFileSync(projectFile, "utf-8");
         return JSON.parse(data);
       }
     } catch (error) {
@@ -159,11 +163,11 @@ class ProjectSystem {
       project.updatedAt = Date.now();
       const projectFile = this.getProjectFile(project.id);
       const data = JSON.stringify(project, null, 2);
-      fs.writeFileSync(projectFile, data, 'utf-8');
+      fs.writeFileSync(projectFile, data, "utf-8");
 
       // Update index with new timestamp
       const index = this.loadIndex();
-      const indexEntry = index.projects.find(p => p.id === project.id);
+      const indexEntry = index.projects.find((p) => p.id === project.id);
       if (indexEntry) {
         indexEntry.name = project.name;
         indexEntry.updatedAt = project.updatedAt;
@@ -177,13 +181,18 @@ class ProjectSystem {
   /**
    * Update project metadata
    */
-  updateProject(projectId: string, updates: Partial<Pick<Project, 'name' | 'description' | 'activeSessionId'>>): Project | null {
+  updateProject(
+    projectId: string,
+    updates: Partial<Pick<Project, "name" | "description" | "activeSessionId">>,
+  ): Project | null {
     const project = this.loadProject(projectId);
     if (!project) return null;
 
     if (updates.name !== undefined) project.name = updates.name;
-    if (updates.description !== undefined) project.description = updates.description;
-    if (updates.activeSessionId !== undefined) project.activeSessionId = updates.activeSessionId;
+    if (updates.description !== undefined)
+      project.description = updates.description;
+    if (updates.activeSessionId !== undefined)
+      project.activeSessionId = updates.activeSessionId;
 
     this.saveProject(project);
     return project;
@@ -201,7 +210,7 @@ class ProjectSystem {
 
       // Update index
       const index = this.loadIndex();
-      index.projects = index.projects.filter(p => p.id !== projectId);
+      index.projects = index.projects.filter((p) => p.id !== projectId);
       if (index.activeProjectId === projectId) {
         index.activeProjectId = index.projects[0]?.id;
       }
@@ -220,12 +229,12 @@ class ProjectSystem {
   listProjects(): ProjectSummary[] {
     const index = this.loadIndex();
 
-    return index.projects.map(indexEntry => {
+    return index.projects.map((indexEntry) => {
       const project = this.loadProject(indexEntry.id);
       return {
         id: indexEntry.id,
         name: indexEntry.name,
-        description: project?.description || '',
+        description: project?.description || "",
         updatedAt: indexEntry.updatedAt,
         sessionCount: project?.sessions.length || 0,
         fileCount: project?.files.length || 0,
@@ -257,7 +266,9 @@ class ProjectSystem {
     const project = this.loadProject(projectId);
     if (!project) return null;
 
-    const existingIndex = project.sessions.findIndex(s => s.id === session.id);
+    const existingIndex = project.sessions.findIndex(
+      (s) => s.id === session.id,
+    );
     if (existingIndex >= 0) {
       project.sessions[existingIndex] = session;
     } else {
@@ -276,7 +287,7 @@ class ProjectSystem {
     if (!project) return false;
 
     const initialLength = project.sessions.length;
-    project.sessions = project.sessions.filter(s => s.id !== sessionId);
+    project.sessions = project.sessions.filter((s) => s.id !== sessionId);
 
     if (project.sessions.length < initialLength) {
       // Update active session if we deleted it
@@ -295,7 +306,7 @@ class ProjectSystem {
   getSession(projectId: string, sessionId: string): StoredSession | null {
     const project = this.loadProject(projectId);
     if (!project) return null;
-    return project.sessions.find(s => s.id === sessionId) || null;
+    return project.sessions.find((s) => s.id === sessionId) || null;
   }
 
   // ============================================================
@@ -303,28 +314,46 @@ class ProjectSystem {
   // ============================================================
 
   /**
-   * Save a file to a project
+   * Save a file to a project (optionally in a folder)
    */
   saveFile(
     projectId: string,
     fileBuffer: Buffer,
     originalName: string,
     mimeType: string,
-    extractedContent?: string
+    extractedContent?: string,
+    folderPath?: string,
   ): ProjectFile | null {
     const project = this.loadProject(projectId);
     if (!project) return null;
 
     const fileId = `file_${uuidv4().slice(0, 8)}`;
-    const ext = path.extname(originalName) || this.getExtensionFromMime(mimeType);
-    const fileName = `${fileId}${ext}`;
-    const relativePath = `files/${fileName}`;
-    const absolutePath = path.join(this.getProjectDir(projectId), relativePath);
+    const ext =
+      path.extname(originalName) || this.getExtensionFromMime(mimeType);
 
-    // Ensure files directory exists
-    const filesDir = this.getFilesDir(projectId);
-    if (!fs.existsSync(filesDir)) {
-      fs.mkdirSync(filesDir, { recursive: true });
+    // Use original name with a unique suffix if needed to avoid collisions
+    const baseName = path.basename(originalName, ext);
+    let fileName = originalName;
+    let relativePath = folderPath
+      ? `files/${folderPath}/${fileName}`
+      : `files/${fileName}`;
+    let absolutePath = path.join(this.getProjectDir(projectId), relativePath);
+
+    // Handle name collisions by appending a number
+    let counter = 1;
+    while (fs.existsSync(absolutePath)) {
+      fileName = `${baseName} (${counter})${ext}`;
+      relativePath = folderPath
+        ? `files/${folderPath}/${fileName}`
+        : `files/${fileName}`;
+      absolutePath = path.join(this.getProjectDir(projectId), relativePath);
+      counter++;
+    }
+
+    // Ensure directory exists
+    const targetDir = path.dirname(absolutePath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
 
     // Write file to disk
@@ -332,12 +361,13 @@ class ProjectSystem {
 
     const projectFile: ProjectFile = {
       id: fileId,
-      name: originalName,
+      name: fileName,
       type: mimeType,
       size: fileBuffer.length,
       path: relativePath,
       uploadedAt: Date.now(),
       content: extractedContent,
+      parentPath: folderPath || "",
     };
 
     project.files.push(projectFile);
@@ -353,7 +383,7 @@ class ProjectSystem {
     const project = this.loadProject(projectId);
     if (!project) return null;
 
-    const file = project.files.find(f => f.id === fileId);
+    const file = project.files.find((f) => f.id === fileId);
     if (!file) return null;
 
     return path.join(this.getProjectDir(projectId), file.path);
@@ -365,7 +395,7 @@ class ProjectSystem {
   getFile(projectId: string, fileId: string): ProjectFile | null {
     const project = this.loadProject(projectId);
     if (!project) return null;
-    return project.files.find(f => f.id === fileId) || null;
+    return project.files.find((f) => f.id === fileId) || null;
   }
 
   /**
@@ -375,7 +405,7 @@ class ProjectSystem {
     const project = this.loadProject(projectId);
     if (!project) return false;
 
-    const file = project.files.find(f => f.id === fileId);
+    const file = project.files.find((f) => f.id === fileId);
     if (!file) return false;
 
     // Delete file from disk
@@ -385,7 +415,7 @@ class ProjectSystem {
     }
 
     // Remove from project
-    project.files = project.files.filter(f => f.id !== fileId);
+    project.files = project.files.filter((f) => f.id !== fileId);
     this.saveProject(project);
 
     return true;
@@ -400,28 +430,339 @@ class ProjectSystem {
   }
 
   /**
-   * Update file content (for text files)
+   * List all folders in a project
    */
-  updateFileContent(projectId: string, fileId: string, content: string): boolean {
+  listFolders(projectId: string): ProjectFolder[] {
+    const project = this.loadProject(projectId);
+    return project?.folders || [];
+  }
+
+  // ============================================================
+  // Folder Operations
+  // ============================================================
+
+  /**
+   * Create a folder in a project
+   */
+  createFolder(
+    projectId: string,
+    folderPath: string,
+    name: string,
+  ): ProjectFolder | null {
+    const project = this.loadProject(projectId);
+    if (!project) return null;
+
+    // Initialize folders array if it doesn't exist
+    if (!project.folders) {
+      project.folders = [];
+    }
+
+    // Normalize the full path
+    const fullPath = folderPath ? `${folderPath}/${name}` : name;
+
+    // Check if folder already exists
+    if (project.folders.some((f) => f.path === fullPath)) {
+      return project.folders.find((f) => f.path === fullPath) || null;
+    }
+
+    const folderId = `folder_${uuidv4().slice(0, 8)}`;
+    const folder: ProjectFolder = {
+      id: folderId,
+      name,
+      path: fullPath,
+      parentPath: folderPath,
+      createdAt: Date.now(),
+      isExpanded: true,
+    };
+
+    // Create the actual directory on disk
+    const absolutePath = path.join(this.getFilesDir(projectId), fullPath);
+    if (!fs.existsSync(absolutePath)) {
+      fs.mkdirSync(absolutePath, { recursive: true });
+    }
+
+    project.folders.push(folder);
+    this.saveProject(project);
+
+    return folder;
+  }
+
+  /**
+   * Delete a folder and all its contents
+   */
+  deleteFolder(projectId: string, folderPath: string): boolean {
     const project = this.loadProject(projectId);
     if (!project) return false;
 
-    const file = project.files.find(f => f.id === fileId);
+    // Remove folder from project metadata
+    project.folders = (project.folders || []).filter(
+      (f) => f.path !== folderPath && !f.path.startsWith(`${folderPath}/`),
+    );
+
+    // Remove all files in this folder
+    project.files = project.files.filter((f) => {
+      const fileFolderPath = f.parentPath || "";
+      return (
+        fileFolderPath !== folderPath &&
+        !fileFolderPath.startsWith(`${folderPath}/`)
+      );
+    });
+
+    // Delete the actual directory from disk
+    const absolutePath = path.join(this.getFilesDir(projectId), folderPath);
+    if (fs.existsSync(absolutePath)) {
+      fs.rmSync(absolutePath, { recursive: true, force: true });
+    }
+
+    this.saveProject(project);
+    return true;
+  }
+
+  /**
+   * Rename a folder
+   */
+  renameFolder(
+    projectId: string,
+    oldPath: string,
+    newName: string,
+  ): ProjectFolder | null {
+    const project = this.loadProject(projectId);
+    if (!project) return null;
+
+    const folder = (project.folders || []).find((f) => f.path === oldPath);
+    if (!folder) return null;
+
+    const parentPath = folder.parentPath;
+    const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+
+    // Rename on disk
+    const oldAbsolutePath = path.join(this.getFilesDir(projectId), oldPath);
+    const newAbsolutePath = path.join(this.getFilesDir(projectId), newPath);
+
+    if (fs.existsSync(oldAbsolutePath)) {
+      fs.renameSync(oldAbsolutePath, newAbsolutePath);
+    }
+
+    // Update folder metadata
+    folder.name = newName;
+    folder.path = newPath;
+
+    // Update all child folders' paths
+    project.folders = (project.folders || []).map((f) => {
+      if (f.path.startsWith(`${oldPath}/`)) {
+        return {
+          ...f,
+          path: f.path.replace(oldPath, newPath),
+          parentPath:
+            f.parentPath === oldPath
+              ? newPath
+              : f.parentPath.replace(`${oldPath}/`, `${newPath}/`),
+        };
+      }
+      return f;
+    });
+
+    // Update all files' paths in this folder
+    project.files = project.files.map((f) => {
+      if (f.parentPath === oldPath || f.parentPath?.startsWith(`${oldPath}/`)) {
+        const newParentPath =
+          f.parentPath === oldPath
+            ? newPath
+            : f.parentPath.replace(`${oldPath}/`, `${newPath}/`);
+        const newFilePath = f.path.replace(
+          `files/${oldPath}/`,
+          `files/${newPath}/`,
+        );
+        return {
+          ...f,
+          path: newFilePath,
+          parentPath: newParentPath,
+        };
+      }
+      return f;
+    });
+
+    this.saveProject(project);
+    return folder;
+  }
+
+  /**
+   * Move a file to a different folder
+   */
+  moveFile(
+    projectId: string,
+    fileId: string,
+    targetFolderPath: string,
+  ): ProjectFile | null {
+    const project = this.loadProject(projectId);
+    if (!project) return null;
+
+    const file = project.files.find((f) => f.id === fileId);
+    if (!file) return null;
+
+    // Get the filename
+    const fileName = path.basename(file.path);
+
+    // Calculate new path
+    const newRelativePath = targetFolderPath
+      ? `files/${targetFolderPath}/${fileName}`
+      : `files/${fileName}`;
+
+    // Move file on disk
+    const oldAbsolutePath = path.join(this.getProjectDir(projectId), file.path);
+    const newAbsolutePath = path.join(
+      this.getProjectDir(projectId),
+      newRelativePath,
+    );
+
+    // Ensure target directory exists
+    const targetDir = path.dirname(newAbsolutePath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    if (fs.existsSync(oldAbsolutePath)) {
+      fs.renameSync(oldAbsolutePath, newAbsolutePath);
+    }
+
+    // Update file metadata
+    file.path = newRelativePath;
+    file.parentPath = targetFolderPath;
+
+    this.saveProject(project);
+    return file;
+  }
+
+  /**
+   * Toggle folder expanded state
+   */
+  toggleFolderExpanded(projectId: string, folderPath: string): boolean {
+    const project = this.loadProject(projectId);
+    if (!project) return false;
+
+    if (!project.expandedFolders) {
+      project.expandedFolders = [];
+    }
+
+    const index = project.expandedFolders.indexOf(folderPath);
+    if (index >= 0) {
+      project.expandedFolders.splice(index, 1);
+    } else {
+      project.expandedFolders.push(folderPath);
+    }
+
+    this.saveProject(project);
+    return index < 0; // Return new expanded state
+  }
+
+  /**
+   * Build a tree structure from files and folders
+   */
+  buildFileTree(projectId: string): FileTreeNode[] {
+    const project = this.loadProject(projectId);
+    if (!project) return [];
+
+    const expandedFolders = new Set(project.expandedFolders || []);
+    const tree: FileTreeNode[] = [];
+    const nodeMap = new Map<string, FileTreeNode>();
+
+    // Create folder nodes first
+    const sortedFolders = [...(project.folders || [])].sort(
+      (a, b) => a.path.split("/").length - b.path.split("/").length,
+    );
+
+    for (const folder of sortedFolders) {
+      const node: FileTreeNode = {
+        id: folder.id,
+        name: folder.name,
+        path: folder.path,
+        type: "folder",
+        children: [],
+        folder,
+        isExpanded: expandedFolders.has(folder.path),
+      };
+      nodeMap.set(folder.path, node);
+
+      if (!folder.parentPath) {
+        tree.push(node);
+      } else {
+        const parentNode = nodeMap.get(folder.parentPath);
+        if (parentNode && parentNode.children) {
+          parentNode.children.push(node);
+        }
+      }
+    }
+
+    // Add file nodes
+    for (const file of project.files) {
+      const node: FileTreeNode = {
+        id: file.id,
+        name: file.name,
+        path: file.path,
+        type: "file",
+        file,
+      };
+
+      const parentPath = file.parentPath || "";
+      if (!parentPath) {
+        tree.push(node);
+      } else {
+        const parentNode = nodeMap.get(parentPath);
+        if (parentNode && parentNode.children) {
+          parentNode.children.push(node);
+        } else {
+          // Parent folder doesn't exist in metadata, add to root
+          tree.push(node);
+        }
+      }
+    }
+
+    // Sort: folders first, then alphabetically
+    const sortNodes = (nodes: FileTreeNode[]) => {
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === "folder" ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      for (const node of nodes) {
+        if (node.children) {
+          sortNodes(node.children);
+        }
+      }
+    };
+    sortNodes(tree);
+
+    return tree;
+  }
+
+  /**
+   * Update file content (for text files)
+   */
+  updateFileContent(
+    projectId: string,
+    fileId: string,
+    content: string,
+  ): boolean {
+    const project = this.loadProject(projectId);
+    if (!project) return false;
+
+    const file = project.files.find((f) => f.id === fileId);
     if (!file) return false;
 
     // Write content to file on disk
     const absolutePath = path.join(this.getProjectDir(projectId), file.path);
     try {
-      fs.writeFileSync(absolutePath, content, 'utf-8');
+      fs.writeFileSync(absolutePath, content, "utf-8");
 
       // Update size and content in metadata
-      file.size = Buffer.from(content, 'utf-8').length;
+      file.size = Buffer.from(content, "utf-8").length;
       file.content = content;
 
       this.saveProject(project);
       return true;
     } catch (error) {
-      console.error('Failed to update file content:', error);
+      console.error("Failed to update file content:", error);
       return false;
     }
   }
@@ -432,15 +773,15 @@ class ProjectSystem {
 
   private getExtensionFromMime(mimeType: string): string {
     const mimeMap: Record<string, string> = {
-      'application/pdf': '.pdf',
-      'text/plain': '.txt',
-      'text/markdown': '.md',
-      'image/png': '.png',
-      'image/jpeg': '.jpg',
-      'image/gif': '.gif',
-      'image/webp': '.webp',
+      "application/pdf": ".pdf",
+      "text/plain": ".txt",
+      "text/markdown": ".md",
+      "image/png": ".png",
+      "image/jpeg": ".jpg",
+      "image/gif": ".gif",
+      "image/webp": ".webp",
     };
-    return mimeMap[mimeType] || '';
+    return mimeMap[mimeType] || "";
   }
 
   /**
@@ -449,7 +790,10 @@ class ProjectSystem {
   ensureDefaultProject(): Project {
     const index = this.loadIndex();
     if (index.projects.length === 0) {
-      return this.createProject('My First Project', 'Welcome to Continuum! This is your first project.');
+      return this.createProject(
+        "My First Project",
+        "Welcome to Continuum! This is your first project.",
+      );
     }
     return this.loadProject(index.projects[0].id)!;
   }

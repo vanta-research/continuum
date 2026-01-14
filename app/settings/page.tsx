@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Settings as SettingsIcon,
   Save,
@@ -18,6 +19,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { LogIn, LogOut, User, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +49,15 @@ interface ProviderConfig {
   requiresCustomEndpoint?: boolean;
 }
 
+// ChatGPT credentials type
+interface ChatGPTCredentials {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  accountId: string;
+  email?: string;
+}
+
 const PROVIDERS: ProviderConfig[] = [
   {
     id: "atom",
@@ -55,6 +66,13 @@ const PROVIDERS: ProviderConfig[] = [
     icon: <Cpu className="h-4 w-4" />,
     color: "bg-green-500",
     isLocal: true,
+  },
+  {
+    id: "chatgpt",
+    name: "ChatGPT",
+    description: "GPT-5.x via Plus/Pro subscription",
+    icon: <Sparkles className="h-4 w-4" />,
+    color: "bg-teal-500",
   },
   {
     id: "openai",
@@ -114,7 +132,7 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
-export default function Settings() {
+function SettingsContent() {
   const [serverUrl, setServerUrl] = useState("http://localhost:8082");
   const [temperature, setTemperature] = useState([0.7]);
   const [maxTokens, setMaxTokens] = useState([2048]);
@@ -136,9 +154,35 @@ export default function Settings() {
   // Visibility toggles for API keys
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
+  // ChatGPT OAuth state
+  const [chatgptCredentials, setChatgptCredentials] =
+    useState<ChatGPTCredentials | null>(null);
+  const [chatgptModelId, setChatgptModelId] = useState("gpt-5.1-codex");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [saveMessage, setSaveMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"general" | "models">("general");
   const { accentColor, setAccentColor } = useAccentColor();
+  const searchParams = useSearchParams();
+
+  // Handle OAuth callback messages
+  useEffect(() => {
+    const authSuccess = searchParams.get("auth_success");
+    const authError = searchParams.get("auth_error");
+
+    if (authSuccess === "chatgpt") {
+      setSaveMessage("✓ Successfully connected to ChatGPT!");
+      // Reload settings to get new credentials
+      window.history.replaceState({}, "", "/settings");
+    } else if (authError) {
+      setSaveMessage(`✗ ${authError}`);
+      window.history.replaceState({}, "", "/settings");
+    }
+
+    if (authSuccess || authError) {
+      setTimeout(() => setSaveMessage(""), 5000);
+    }
+  }, [searchParams]);
 
   // Load settings on mount
   useEffect(() => {
@@ -172,6 +216,10 @@ export default function Settings() {
               setCustomEndpointApiKey(data.settings.customEndpointApiKey);
             if (data.settings.customEndpointModelId)
               setCustomEndpointModelId(data.settings.customEndpointModelId);
+            if (data.settings.chatgptCredentials)
+              setChatgptCredentials(data.settings.chatgptCredentials);
+            if (data.settings.chatgptModelId)
+              setChatgptModelId(data.settings.chatgptModelId);
           }
         }
       } catch (error) {
@@ -202,6 +250,7 @@ export default function Settings() {
           customEndpointUrl,
           customEndpointApiKey,
           customEndpointModelId,
+          chatgptModelId,
         }),
       });
 
@@ -286,6 +335,84 @@ export default function Settings() {
         break;
     }
   };
+
+  // ChatGPT OAuth handlers
+  const handleChatGPTLogin = useCallback(async () => {
+    setIsLoggingIn(true);
+    setSaveMessage("Opening ChatGPT login...");
+
+    try {
+      const response = await fetch("/api/auth/chatgpt/start");
+      const data = await response.json();
+
+      if (data.success && data.authUrl) {
+        // Open the OAuth URL in a new window/tab
+        window.open(data.authUrl, "_blank");
+        setSaveMessage(
+          "Complete login in the opened window, then return here.",
+        );
+      } else {
+        setSaveMessage("✗ Failed to start authentication");
+      }
+    } catch (error) {
+      console.error("ChatGPT login error:", error);
+      setSaveMessage("✗ Failed to start authentication");
+    } finally {
+      setIsLoggingIn(false);
+      setTimeout(() => setSaveMessage(""), 10000);
+    }
+  }, []);
+
+  const handleChatGPTLogout = useCallback(async () => {
+    try {
+      // Clear credentials from settings
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverUrl,
+          temperature: temperature[0],
+          maxTokens: maxTokens[0],
+          streamResponse,
+          selectedModel,
+          hfToken,
+          mistralApiKey,
+          openaiApiKey,
+          anthropicApiKey,
+          openrouterApiKey,
+          customEndpointUrl,
+          customEndpointApiKey,
+          customEndpointModelId,
+          chatgptCredentials: null,
+          chatgptModelId,
+        }),
+      });
+
+      if (response.ok) {
+        setChatgptCredentials(null);
+        setSaveMessage("✓ Disconnected from ChatGPT");
+        setTimeout(() => setSaveMessage(""), 3000);
+      }
+    } catch (error) {
+      console.error("ChatGPT logout error:", error);
+      setSaveMessage("✗ Failed to disconnect");
+    }
+  }, [
+    serverUrl,
+    temperature,
+    maxTokens,
+    streamResponse,
+    selectedModel,
+    hfToken,
+    mistralApiKey,
+    openaiApiKey,
+    anthropicApiKey,
+    openrouterApiKey,
+    customEndpointUrl,
+    customEndpointApiKey,
+    customEndpointModelId,
+    chatgptModelId,
+  ]);
 
   const selectedProvider = PROVIDERS.find((p) => p.id === selectedModel);
 
@@ -510,6 +637,113 @@ export default function Settings() {
                             </button>
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ChatGPT OAuth Configuration */}
+                  {selectedModel === "chatgpt" && (
+                    <div className="border-t border-border/50 pt-6 space-y-4">
+                      <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                        <p className="text-sm text-teal-400">
+                          <strong>ChatGPT Plus/Pro:</strong> Access GPT-5.x and
+                          Codex models using your ChatGPT subscription. No API
+                          key required - just login with your account.
+                        </p>
+                      </div>
+
+                      {/* Login Status */}
+                      <div className="space-y-4">
+                        {chatgptCredentials ? (
+                          <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-teal-500/20 flex items-center justify-center">
+                                <User className="h-5 w-5 text-teal-500" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">Connected</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {chatgptCredentials.email ||
+                                    `Account: ${chatgptCredentials.accountId.slice(0, 8)}...`}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleChatGPTLogout}
+                              className="gap-2"
+                            >
+                              <LogOut className="h-4 w-4" />
+                              Disconnect
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                                <User className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">
+                                  Not Connected
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Login with your ChatGPT Plus/Pro account
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={handleChatGPTLogin}
+                              disabled={isLoggingIn}
+                              className="gap-2"
+                            >
+                              <LogIn className="h-4 w-4" />
+                              {isLoggingIn
+                                ? "Opening..."
+                                : "Login with ChatGPT"}
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Model Selection */}
+                        {chatgptCredentials && (
+                          <div className="space-y-2">
+                            <Label htmlFor="chatgptModel">Codex Model</Label>
+                            <select
+                              id="chatgptModel"
+                              value={chatgptModelId}
+                              onChange={(e) =>
+                                setChatgptModelId(e.target.value)
+                              }
+                              className="w-full h-10 px-3 rounded-md bg-background/50 border border-border text-sm"
+                            >
+                              <optgroup label="GPT-5.2">
+                                <option value="gpt-5.2">GPT-5.2</option>
+                                <option value="gpt-5.2-codex">
+                                  GPT-5.2 Codex
+                                </option>
+                              </optgroup>
+                              <optgroup label="GPT-5.1 Codex">
+                                <option value="gpt-5.1-codex-max">
+                                  GPT-5.1 Codex Max
+                                </option>
+                                <option value="gpt-5.1-codex">
+                                  GPT-5.1 Codex
+                                </option>
+                                <option value="gpt-5.1-codex-mini">
+                                  GPT-5.1 Codex Mini
+                                </option>
+                              </optgroup>
+                              <optgroup label="GPT-5.1">
+                                <option value="gpt-5.1">GPT-5.1</option>
+                              </optgroup>
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                              Codex models are optimized for coding tasks
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -761,5 +995,19 @@ export default function Settings() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function Settings() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          Loading settings...
+        </div>
+      }
+    >
+      <SettingsContent />
+    </Suspense>
   );
 }

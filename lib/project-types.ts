@@ -14,9 +14,31 @@ export interface ProjectFile {
   name: string;
   type: string; // MIME type
   size: number;
-  path: string; // Relative path within project: "files/abc123.pdf"
+  path: string; // Relative path within project: "files/notes/daily/2025-01-13.md"
   uploadedAt: number; // Unix timestamp
   content?: string; // Extracted text for PDFs/text files (for context)
+  isFolder?: boolean; // True if this is a folder, not a file
+  parentPath?: string; // Parent folder path, empty string for root
+}
+
+export interface ProjectFolder {
+  id: string;
+  name: string;
+  path: string; // Full path from project root: "notes/daily"
+  parentPath: string; // Parent folder path: "notes" or "" for root
+  createdAt: number;
+  isExpanded?: boolean; // UI state for tree view
+}
+
+export interface FileTreeNode {
+  id: string;
+  name: string;
+  path: string;
+  type: "file" | "folder";
+  children?: FileTreeNode[];
+  file?: ProjectFile;
+  folder?: ProjectFolder;
+  isExpanded?: boolean;
 }
 
 /**
@@ -86,7 +108,9 @@ export interface Project {
   updatedAt: number;
   sessions: StoredSession[];
   files: ProjectFile[];
+  folders: ProjectFolder[]; // Folder structure
   activeSessionId?: string; // Last active session in this project
+  expandedFolders?: string[]; // Paths of expanded folders in UI
 }
 
 /**
@@ -174,4 +198,6 @@ export interface FileResponse {
 
 export interface FilesListResponse {
   files: ProjectFile[];
+  folders: ProjectFolder[];
+  tree: FileTreeNode[];
 }
