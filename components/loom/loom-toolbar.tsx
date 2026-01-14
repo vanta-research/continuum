@@ -10,13 +10,28 @@ import {
   Pencil,
   Zap,
   GitBranch,
+  Download,
+  FileDown,
+  FileType,
 } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useLoom } from "./loom-provider";
 import { cn } from "@/lib/utils";
+import {
+  exportAsMarkdown,
+  exportAsPlainText,
+  exportAsPdf,
+} from "@/lib/export-utils";
 
 interface LoomToolbarProps {
   onClose?: () => void;
@@ -83,6 +98,29 @@ export function LoomToolbar({
     setTitleInput(document?.title || "Untitled Document");
     setIsEditingTitle(true);
   }, [document?.title]);
+
+  const handleExportMarkdown = useCallback(() => {
+    if (document) {
+      exportAsMarkdown(document.content, document.title);
+    }
+  }, [document]);
+
+  const handleExportPlainText = useCallback(() => {
+    if (document) {
+      exportAsPlainText(document.content, document.title);
+    }
+  }, [document]);
+
+  const handleExportPdf = useCallback(async () => {
+    if (document) {
+      try {
+        await exportAsPdf(document.content, document.title);
+      } catch (error) {
+        console.error("Failed to export PDF:", error);
+        alert(error instanceof Error ? error.message : "Failed to export PDF");
+      }
+    }
+  }, [document]);
 
   return (
     <div
@@ -165,6 +203,33 @@ export function LoomToolbar({
               </span>
             </span>
           </div>
+        )}
+
+        {/* Export dropdown */}
+        {document && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 px-2 gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                <span className="text-xs">Export</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={handleExportMarkdown}>
+                <FileDown className="h-4 w-4 mr-2" />
+                <span>Markdown (.md)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPlainText}>
+                <FileType className="h-4 w-4 mr-2" />
+                <span>Plain Text (.txt)</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleExportPdf}>
+                <FileText className="h-4 w-4 mr-2" />
+                <span>PDF (Print)</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {/* Auto-accept toggle */}
