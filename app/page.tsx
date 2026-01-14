@@ -1483,7 +1483,7 @@ function ChatInterfaceInner() {
                   className="cursor-pointer border-0 transition-all hover:bg-accent/50 bg-transparent"
                   onClick={() => setCurrentSessionId(session.id)}
                 >
-                  <div className="flex items-center justify-between p-3">
+                  <div className="flex items-center justify-between px-2.5 py-1.5">
                     <div className="flex-1 truncate text-sm font-medium">
                       {session.title || "New Chat"}
                     </div>
@@ -1665,7 +1665,7 @@ function ChatInterfaceInner() {
                         >
                           {message.role === "user" ? (
                             <Card className="glass backdrop-blur-xl border-0 bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl">
-                              <div className="px-4 py-3">
+                              <div className="px-3 py-2">
                                 {message.attachments &&
                                   message.attachments.length > 0 && (
                                     <div className="mb-3 space-y-2">
@@ -1879,7 +1879,7 @@ function ChatInterfaceInner() {
                       >
                         {message.role === "user" ? (
                           <Card className="glass backdrop-blur-xl border-0 bg-gradient-to-br from-primary/15 via-primary/10 to-primary/5 shadow-md shadow-primary/5 rounded-2xl">
-                            <div className="px-4 py-3">
+                            <div className="px-3 py-2">
                               {message.attachments &&
                                 message.attachments.length > 0 && (
                                   <div className="mb-3 space-y-2">
