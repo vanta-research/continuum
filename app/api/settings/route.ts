@@ -3,13 +3,26 @@ import fs from "fs";
 import path from "path";
 
 interface Settings {
+  // Server configuration
   serverUrl: string;
   temperature: number;
   maxTokens: number;
   streamResponse: boolean;
   selectedModel: string;
+
+  // HuggingFace token for model downloads
   hfToken: string;
+
+  // Provider API Keys
   mistralApiKey: string;
+  openaiApiKey: string;
+  anthropicApiKey: string;
+  openrouterApiKey: string;
+
+  // Custom OpenAI-compatible endpoint
+  customEndpointUrl: string;
+  customEndpointApiKey: string;
+  customEndpointModelId: string;
 }
 
 const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
@@ -41,6 +54,12 @@ function loadSettings(): Settings {
     selectedModel: "atom",
     hfToken: "",
     mistralApiKey: "",
+    openaiApiKey: "",
+    anthropicApiKey: "",
+    openrouterApiKey: "",
+    customEndpointUrl: "",
+    customEndpointApiKey: "",
+    customEndpointModelId: "",
   };
 }
 
@@ -56,14 +75,30 @@ function saveSettings(settings: Partial<Settings>): Settings {
     throw error;
   }
 
-  // Also update environment variable for server URL
+  // Update environment variables for runtime access
   if (updated.serverUrl) {
     process.env.LLAMA_SERVER_URL = updated.serverUrl;
   }
-
-  // Update Mistral API key in environment if provided
   if (updated.mistralApiKey) {
     process.env.MISTRAL_API_KEY = updated.mistralApiKey;
+  }
+  if (updated.openaiApiKey) {
+    process.env.OPENAI_API_KEY = updated.openaiApiKey;
+  }
+  if (updated.anthropicApiKey) {
+    process.env.ANTHROPIC_API_KEY = updated.anthropicApiKey;
+  }
+  if (updated.openrouterApiKey) {
+    process.env.OPENROUTER_API_KEY = updated.openrouterApiKey;
+  }
+  if (updated.customEndpointUrl) {
+    process.env.CUSTOM_ENDPOINT_URL = updated.customEndpointUrl;
+  }
+  if (updated.customEndpointApiKey) {
+    process.env.CUSTOM_ENDPOINT_API_KEY = updated.customEndpointApiKey;
+  }
+  if (updated.customEndpointModelId) {
+    process.env.CUSTOM_ENDPOINT_MODEL_ID = updated.customEndpointModelId;
   }
 
   return updated;
@@ -80,6 +115,12 @@ export async function POST(request: NextRequest) {
       selectedModel,
       hfToken,
       mistralApiKey,
+      openaiApiKey,
+      anthropicApiKey,
+      openrouterApiKey,
+      customEndpointUrl,
+      customEndpointApiKey,
+      customEndpointModelId,
     } = body;
 
     const settings = saveSettings({
@@ -90,6 +131,12 @@ export async function POST(request: NextRequest) {
       selectedModel,
       hfToken,
       mistralApiKey,
+      openaiApiKey,
+      anthropicApiKey,
+      openrouterApiKey,
+      customEndpointUrl,
+      customEndpointApiKey,
+      customEndpointModelId,
     });
 
     return NextResponse.json({
