@@ -527,21 +527,24 @@ async function streamMistralResponse(messages: ChatMessage[]) {
   return mistralResponse.body;
 }
 
-async function streamLlamaResponse(prompt: string) {
+/**
+ * Stream response from llama.cpp server using OpenAI-compatible API
+ * llama.cpp exposes /v1/chat/completions which follows the OpenAI format
+ */
+async function streamLlamaResponse(
+  messages: Array<{ role: string; content: string }>,
+  temperature: number = 0.7,
+  maxTokens: number = 4096,
+) {
   const chatRequest = {
-    model: "atom",
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
+    messages,
     stream: true,
-    temperature: 0.7,
-    max_tokens: 4096,
+    temperature,
+    max_tokens: maxTokens,
   };
 
-  const response = await fetch(`${LLAMA_SERVER_URL}/ollama/api/chat`, {
+  // llama.cpp server uses OpenAI-compatible /v1/chat/completions endpoint
+  const response = await fetch(`${LLAMA_SERVER_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -551,15 +554,21 @@ async function streamLlamaResponse(prompt: string) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("LLaMA API error:", response.status, errorText);
+    console.error("llama.cpp API error:", response.status, errorText);
 
     if (response.status === 401) {
       throw new Error(
-        "LLaMA server requires authentication. Please configure API credentials or use the Mistral API model.",
+        "llama.cpp server requires authentication. Please check your server configuration.",
       );
     }
 
-    throw new Error(`LLaMA API returned ${response.status}: ${errorText}`);
+    if (response.status === 503 || errorText.includes("loading")) {
+      throw new Error(
+        "llama.cpp server is still loading the model. Please wait a moment and try again.",
+      );
+    }
+
+    throw new Error(`llama.cpp API returned ${response.status}: ${errorText}`);
   }
 
   return response.body;
@@ -897,19 +906,19 @@ export async function POST(request: NextRequest) {
 
       streamBody = await streamMistralResponse(messages);
     } else {
-      // Build conversation history for local LLaMA model
-      let historyText = "";
-      if (conversationHistory.length > 0) {
-        historyText = "\n\n--- Conversation History ---\n";
-        conversationHistory.forEach((msg) => {
-          const roleLabel = msg.role === "user" ? "User" : "Assistant";
-          historyText += `${roleLabel}: ${msg.content}\n\n`;
-        });
-        historyText += "--- End History ---\n";
-      }
+      // Build messages array for local llama.cpp model (OpenAI-compatible format)
+      const llamaMessages: ChatMessage[] = [
+        {
+          role: "system",
+          content: systemPrompt + memoryContext + webSearchContext,
+        },
+        // Include conversation history
+        ...conversationHistory,
+        // Add current user message
+        { role: "user", content: enhancedMessage },
+      ];
 
-      const llamaPrompt = `${systemPrompt}${memoryContext}${webSearchContext}${historyText}\n\nUser: ${enhancedMessage}\n\nAssistant:`;
-      streamBody = await streamLlamaResponse(llamaPrompt);
+      streamBody = await streamLlamaResponse(llamaMessages);
     }
 
     const encoder = new TextEncoder();
@@ -948,11 +957,9 @@ export async function POST(request: NextRequest) {
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
 
-            if (
-              model === "atom-large-experimental" ||
-              model === "loux-large-experimental" ||
-              model === "mistral"
-            ) {
+            // All models now use OpenAI-compatible streaming format (data: {...})
+            // This includes llama.cpp, Mistral, and other OpenAI-compatible APIs
+            if (true) {
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
@@ -1015,42 +1022,6 @@ export async function POST(request: NextRequest) {
                       data,
                     );
                   }
-                }
-              }
-            } else {
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-
-                try {
-                  const parsed = JSON.parse(line);
-                  let content = parsed.message?.content;
-                  if (content) {
-                    // If Loom is active, convert ADD_FILE markers to CANVAS_EDIT on-the-fly
-                    if (loomEnabled && loomContext) {
-                      const converted = convertAddFileToCanvasEdit(
-                        content,
-                        inAddFile,
-                        addFileBuffer,
-                      );
-                      content = converted.content;
-                      inAddFile = converted.inAddFile;
-                      addFileBuffer = converted.addFileBuffer;
-                    }
-
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({ content })}\n\n`,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  console.error(
-                    "Error parsing LLaMA SSE data:",
-                    e,
-                    "Raw data:",
-                    trimmed,
-                  );
                 }
               }
             }

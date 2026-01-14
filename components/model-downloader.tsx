@@ -507,6 +507,33 @@ export default function ModelDownloader({
             </span>
           </div>
 
+          {/* Usage instructions */}
+          <Card className="p-4 bg-primary/5 border-primary/20">
+            <div className="text-sm space-y-2">
+              <div className="font-medium text-primary">
+                How to use your downloaded models:
+              </div>
+              <div className="text-muted-foreground space-y-1">
+                <p>1. Start llama.cpp server with your model:</p>
+                <code className="block bg-background/50 px-3 py-2 rounded text-xs font-mono overflow-x-auto">
+                  ./llama-server --model data/models/YOUR_MODEL.gguf --port 8082
+                  --ctx-size 4096
+                </code>
+                <p className="pt-2">
+                  2. In Settings → General, select &quot;Local (llama.cpp)&quot;
+                  as your model
+                </p>
+                <p>
+                  3. Make sure the server URL is set to http://localhost:8082
+                </p>
+                <p>
+                  4. Click &quot;Test Connection&quot; to verify it&apos;s
+                  working
+                </p>
+              </div>
+            </div>
+          </Card>
+
           <div className="space-y-2">
             {localModels.map((model) => (
               <Card
@@ -518,6 +545,9 @@ export default function ModelDownloader({
                   <div className="text-sm text-muted-foreground">
                     {formatSize(model.size)} • {model.quantization} •{" "}
                     {new Date(model.downloadedAt).toLocaleDateString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground/70 mt-1 font-mono truncate">
+                    {model.filePath}
                   </div>
                 </div>
                 <Button

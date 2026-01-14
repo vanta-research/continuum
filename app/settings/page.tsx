@@ -105,6 +105,7 @@ export default function Settings() {
   };
 
   const handleTestConnection = async () => {
+    setSaveMessage("Testing connection...");
     try {
       const response = await fetch("/api/test-connection", {
         method: "POST",
@@ -117,14 +118,20 @@ export default function Settings() {
       const data = await response.json();
 
       if (data.connected) {
-        setSaveMessage("Connection successful!");
-        setTimeout(() => setSaveMessage(""), 3000);
-      } else {
-        setSaveMessage("Connection failed: " + data.error);
+        if (data.modelLoaded === false) {
+          // Server running but no model loaded
+          setSaveMessage("⚠️ Server connected but no model loaded");
+        } else {
+          // Full success
+          setSaveMessage("✓ " + data.message);
+        }
         setTimeout(() => setSaveMessage(""), 5000);
+      } else {
+        setSaveMessage("✗ " + data.error);
+        setTimeout(() => setSaveMessage(""), 7000);
       }
     } catch (error) {
-      setSaveMessage("Connection failed: Server not reachable");
+      setSaveMessage("✗ Connection failed: Server not reachable");
       setTimeout(() => setSaveMessage(""), 5000);
     }
   };
@@ -232,32 +239,45 @@ export default function Settings() {
                             <SelectValue placeholder="Select model" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="atom">Atom (Local)</SelectItem>
-                            <SelectItem value="atom-large-experimental">
-                              Atom-Large-Experimental
+                            <SelectItem value="atom">
+                              <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-green-500" />
+                                Local (llama.cpp)
+                              </div>
                             </SelectItem>
-                            <SelectItem value="mistral">Mistral API</SelectItem>
+                            <SelectItem value="mistral">
+                              <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                Mistral API (Cloud)
+                              </div>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          Select the AI model to use for conversations
+                          Local: Run models on your machine with llama.cpp
+                          (private) • Cloud: Use Mistral&apos;s API (requires
+                          key)
                         </p>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="serverUrl">LLaMA Server URL</Label>
-                        <Input
-                          id="serverUrl"
-                          value={serverUrl}
-                          onChange={(e) => setServerUrl(e.target.value)}
-                          placeholder="http://localhost:8080"
-                          className="bg-background/50"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          The URL of your llama.cpp server instance (for Atom
-                          model)
-                        </p>
-                      </div>
+                      {selectedModel === "atom" && (
+                        <div className="space-y-2">
+                          <Label htmlFor="serverUrl">
+                            llama.cpp Server URL
+                          </Label>
+                          <Input
+                            id="serverUrl"
+                            value={serverUrl}
+                            onChange={(e) => setServerUrl(e.target.value)}
+                            placeholder="http://localhost:8082"
+                            className="bg-background/50"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            URL of your running llama.cpp server (default:
+                            http://localhost:8082)
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
