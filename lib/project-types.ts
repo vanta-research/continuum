@@ -64,6 +64,7 @@ export interface StoredMessage {
   content: string;
   attachments?: ProjectFileReference[];
   timestamp: number; // Unix timestamp (Date not JSON-serializable)
+  loomContent?: string; // Content that was added to the loom (for display in collapsible)
 }
 
 // ============================================================

@@ -417,10 +417,24 @@ ${documentPreview}
 \`\`\`
 ${loomContext.selectedText ? `\n**User has selected:** "${loomContext.selectedText}"` : ""}
 
-### RESPOND IN CHAT (not edit) WHEN:
-- User asks questions about the document
-- User asks for analysis or opinions
-- User hasn't explicitly requested changes
+### CRITICAL: INTENT DETECTION - WHEN TO EDIT vs DISCUSS
+
+**ONLY EDIT THE LOOM** when the user uses ACTION/COMMITMENT language like:
+- "add this", "write it", "put that in", "go ahead", "do it", "make it so"
+- "update the loom", "add to the document", "write this to the loom"
+- "let's go with that", "sounds good, add it", "yes, write that"
+- "create", "insert", "append", "include this"
+
+**RESPOND IN CHAT (DO NOT EDIT)** when the user uses EXPLORATORY/QUESTION language like:
+- "what do you think?", "what could we?", "how about?", "what if?"
+- "can you suggest?", "ideas for?", "brainstorm", "let's discuss"
+- "tell me about", "explain", "analyze", "review"
+- "maybe we could?", "I'm thinking about", "considering"
+- Any question about the document content
+
+**WHEN IN DOUBT**: Present your ideas in chat first and ask: "Would you like me to add this to the Loom?"
+
+This distinction is crucial - the user wants to brainstorm and discuss ideas BEFORE committing them to the document.
 `;
 }
 
@@ -448,13 +462,24 @@ The system will automatically show a diff of what changed.
 - If editing a document: include the full updated document
 - If replacing a document: include the complete new document
 
-### WHEN TO EDIT THE LOOM:
-Only when the user explicitly asks you to write, edit, add to, or modify the document.
+### CRITICAL: INTENT DETECTION - WHEN TO EDIT vs DISCUSS
 
-### WHEN TO RESPOND IN CHAT INSTEAD:
-- User asks questions about the document ("what is this?", "explain this")
-- User asks for your opinion or analysis
-- User hasn't explicitly requested changes
+**ONLY EDIT THE LOOM** when the user uses ACTION/COMMITMENT language like:
+- "add this", "write it", "put that in", "go ahead", "do it", "make it so"
+- "update the loom", "add to the document", "write this to the loom"
+- "let's go with that", "sounds good, add it", "yes, write that"
+- "create", "insert", "append", "include this"
+
+**RESPOND IN CHAT (DO NOT EDIT)** when the user uses EXPLORATORY/QUESTION language like:
+- "what do you think?", "what could we?", "how about?", "what if?"
+- "can you suggest?", "ideas for?", "brainstorm", "let's discuss"
+- "tell me about", "explain", "analyze", "review"
+- "maybe we could?", "I'm thinking about", "considering"
+- Any question about the document content
+
+**WHEN IN DOUBT**: Present your ideas in chat first and ask: "Would you like me to add this to the Loom?"
+
+This distinction is crucial - the user wants to brainstorm and discuss ideas BEFORE committing them to the document.
 
 ### CURRENT DOCUMENT STATE:
 ${isEmpty ? "(The document is currently empty)" : `The document currently contains:\n---\n${loomContext.content}\n---`}

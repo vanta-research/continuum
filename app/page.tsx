@@ -12,10 +12,12 @@ import {
   PanelRightOpen,
   PanelRightClose,
   ChevronDown,
+  ChevronRight,
   Copy,
   Check,
   RefreshCw,
   Pencil,
+  FileText,
 } from "lucide-react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
@@ -52,7 +54,7 @@ import {
   parseAddFileMarkers,
   cleanAddFileMarkers,
 } from "@/lib/loom-utils";
-import { extractOriginalContent } from "@/lib/diff-utils";
+import { extractOriginalContent, computeDiff } from "@/lib/diff-utils";
 import {
   parseSurgicalEdits,
   applySurgicalEdits,
@@ -145,6 +147,7 @@ interface Message {
   attachments?: FileAttachment[];
   timestamp: Date;
   isEditing?: boolean;
+  loomContent?: string; // Content that was added to the loom (for display in collapsible)
 }
 
 // Message action buttons component
@@ -215,6 +218,40 @@ function MessageActions({
   );
 }
 
+// Collapsible component to show loom content that was added
+function LoomContentIndicator({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!content) return null;
+
+  return (
+    <div className="mt-3 border border-primary/20 rounded-lg overflow-hidden bg-primary/5">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-primary hover:bg-primary/10 transition-colors"
+      >
+        {isExpanded ? (
+          <ChevronDown className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" />
+        )}
+        <FileText className="h-3.5 w-3.5" />
+        <span className="font-medium">Added to Loom</span>
+        <span className="text-muted-foreground ml-1">
+          ({content.split("\n").length} lines)
+        </span>
+      </button>
+      {isExpanded && (
+        <div className="border-t border-primary/20 px-3 py-2 bg-background/50">
+          <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-auto font-mono">
+            {content}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ChatSession {
   id: string;
   title: string;
@@ -240,6 +277,7 @@ function sessionToStored(session: ChatSession): StoredSession {
         size: a.size,
       })),
       timestamp: m.timestamp.getTime(),
+      loomContent: m.loomContent,
     })),
     loomDocument: session.loomDocument
       ? {
@@ -270,6 +308,7 @@ function storedToSession(stored: StoredSession): ChatSession {
         size: a.size,
       })),
       timestamp: new Date(m.timestamp),
+      loomContent: m.loomContent,
     })),
     loomDocument: stored.loomDocument
       ? {
@@ -938,6 +977,14 @@ function ChatInterfaceInner() {
 
               // Final cleanup of chat message
               const cleanedMessage = cleanLoomMarkers(fullResponse);
+
+              // Compute just the added lines for display
+              const diff = computeDiff(currentDocContent, editContent);
+              const addedLines = diff.lines
+                .filter((line) => line.type === "added")
+                .map((line) => line.content)
+                .join("\n");
+
               setSessions((prevSessions) => {
                 return prevSessions.map((s) =>
                   s.id === currentSessionId
@@ -950,6 +997,7 @@ function ChatInterfaceInner() {
                                 content:
                                   cleanedMessage ||
                                   "Done! I've updated the Loom for you.",
+                                loomContent: addedLines || editContent,
                               }
                             : msg,
                         ),
@@ -994,6 +1042,14 @@ function ChatInterfaceInner() {
 
               // Update chat message to indicate pending review
               const cleanedMessage = cleanLoomMarkers(fullResponse);
+
+              // Compute just the added lines for display
+              const diff = computeDiff(originalContent, editContent);
+              const addedLines = diff.lines
+                .filter((line) => line.type === "added")
+                .map((line) => line.content)
+                .join("\n");
+
               setSessions((prevSessions) => {
                 return prevSessions.map((s) =>
                   s.id === currentSessionId
@@ -1006,6 +1062,7 @@ function ChatInterfaceInner() {
                                 content:
                                   cleanedMessage ||
                                   "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
+                                loomContent: addedLines || editContent,
                               }
                             : msg,
                         ),
@@ -1763,6 +1820,11 @@ function ChatInterfaceInner() {
                                   </div>
                                 )
                               )}
+                              {message.loomContent && (
+                                <LoomContentIndicator
+                                  content={message.loomContent}
+                                />
+                              )}
                               <MessageActions
                                 message={message}
                                 isLoading={isLoading}
@@ -1975,6 +2037,11 @@ function ChatInterfaceInner() {
                                   </ReactMarkdown>
                                 </div>
                               )
+                            )}
+                            {message.loomContent && (
+                              <LoomContentIndicator
+                                content={message.loomContent}
+                              />
                             )}
                             <MessageActions
                               message={message}

@@ -9,6 +9,22 @@ import type { DiffLine, DiffResult } from "./loom-types";
 const CONTEXT_LINES = 3;
 
 /**
+ * Normalize a line for comparison purposes.
+ * Trims trailing whitespace to avoid false differences from trailing spaces/tabs.
+ */
+function normalizeLine(line: string): string {
+  return line.trimEnd();
+}
+
+/**
+ * Check if two lines are equal for diff purposes.
+ * Uses normalized comparison to ignore trailing whitespace differences.
+ */
+function linesEqual(a: string, b: string): boolean {
+  return normalizeLine(a) === normalizeLine(b);
+}
+
+/**
  * Compute the Longest Common Subsequence table for two arrays of lines.
  */
 function computeLCSTable(oldLines: string[], newLines: string[]): number[][] {
@@ -23,7 +39,7 @@ function computeLCSTable(oldLines: string[], newLines: string[]): number[][] {
   // Fill the table
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
+      if (linesEqual(oldLines[i - 1], newLines[j - 1])) {
         table[i][j] = table[i - 1][j - 1] + 1;
       } else {
         table[i][j] = Math.max(table[i - 1][j], table[i][j - 1]);
@@ -51,12 +67,12 @@ function backtrackDiff(
   const tempDiff: DiffLine[] = [];
 
   while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      // Lines match - unchanged
+    if (i > 0 && j > 0 && linesEqual(oldLines[i - 1], newLines[j - 1])) {
+      // Lines match - unchanged (use new version's content to preserve formatting)
       tempDiff.push({
         type: "unchanged",
         lineNumber: { old: oldLineNum, new: newLineNum },
-        content: oldLines[i - 1],
+        content: newLines[j - 1],
       });
       i--;
       j--;
