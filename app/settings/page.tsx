@@ -69,8 +69,8 @@ const PROVIDERS: ProviderConfig[] = [
     color: "bg-emerald-500",
     apiKeyField: "openaiApiKey",
     apiKeyPlaceholder: "sk-...",
-    apiKeyHelpText: "Get your API key from OpenAI",
-    apiKeyUrl: "https://platform.openai.com/api-keys",
+    apiKeyHelpText: "View OpenAI API documentation",
+    apiKeyUrl: "https://platform.openai.com/docs/api-reference",
     endpoint: "https://api.openai.com/v1/chat/completions",
   },
   {
@@ -81,8 +81,8 @@ const PROVIDERS: ProviderConfig[] = [
     color: "bg-orange-500",
     apiKeyField: "anthropicApiKey",
     apiKeyPlaceholder: "sk-ant-...",
-    apiKeyHelpText: "Get your API key from Anthropic Console",
-    apiKeyUrl: "https://console.anthropic.com/settings/keys",
+    apiKeyHelpText: "View Anthropic API documentation",
+    apiKeyUrl: "https://docs.anthropic.com/en/api/getting-started",
     endpoint: "https://api.anthropic.com/v1/messages",
   },
   {
@@ -93,8 +93,8 @@ const PROVIDERS: ProviderConfig[] = [
     color: "bg-blue-500",
     apiKeyField: "mistralApiKey",
     apiKeyPlaceholder: "...",
-    apiKeyHelpText: "Get your API key from Mistral Console",
-    apiKeyUrl: "https://console.mistral.ai/api-keys/",
+    apiKeyHelpText: "View Mistral API documentation",
+    apiKeyUrl: "https://docs.mistral.ai/api/",
     endpoint: "https://api.mistral.ai/v1/chat/completions",
   },
   {
@@ -105,8 +105,8 @@ const PROVIDERS: ProviderConfig[] = [
     color: "bg-purple-500",
     apiKeyField: "openrouterApiKey",
     apiKeyPlaceholder: "sk-or-...",
-    apiKeyHelpText: "Get your API key from OpenRouter",
-    apiKeyUrl: "https://openrouter.ai/keys",
+    apiKeyHelpText: "View OpenRouter API documentation",
+    apiKeyUrl: "https://openrouter.ai/docs/api-reference",
     endpoint: "https://openrouter.ai/api/v1/chat/completions",
   },
   {
@@ -841,7 +841,7 @@ function SettingsContent() {
                               rel="noopener noreferrer"
                               className="text-xs text-primary hover:underline flex items-center gap-1"
                             >
-                              Get API Key
+                              View Documentation
                               <ExternalLink className="h-3 w-3" />
                             </a>
                           )}
