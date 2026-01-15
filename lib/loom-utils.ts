@@ -471,6 +471,9 @@ export function cleanAddFileMarkers(text: string): string {
     return text;
   }
 
+  console.log("[cleanAddFileMarkers] Found markers in text, cleaning...");
+  console.log("[cleanAddFileMarkers] Input text length:", text.length);
+
   // Simple string-based approach that will definitely work
   // Find the start and end positions
   const startMarker = "[ADD_FILE]";
@@ -483,6 +486,12 @@ export function cleanAddFileMarkers(text: string): string {
   // Remove all complete [ADD_FILE]...[/ADD_FILE] blocks
   while (iterations < maxIterations) {
     const startIdx = result.indexOf(startMarker);
+    console.log(
+      "[cleanAddFileMarkers] Iteration",
+      iterations,
+      "- startIdx:",
+      startIdx,
+    );
     const endIdx = result.indexOf(endMarker);
 
     if (startIdx === -1 && endIdx === -1) {
@@ -492,9 +501,19 @@ export function cleanAddFileMarkers(text: string): string {
 
     if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
       // Complete block found - remove it
+      console.log(
+        "[cleanAddFileMarkers] Found complete block, removing from",
+        startIdx,
+        "to",
+        endIdx + endMarker.length,
+      );
       const before = result.substring(0, startIdx);
       const after = result.substring(endIdx + endMarker.length);
       result = before + after;
+      console.log(
+        "[cleanAddFileMarkers] Result length after removal:",
+        result.length,
+      );
     } else if (startIdx !== -1 && (endIdx === -1 || endIdx < startIdx)) {
       // Only start marker, or end comes before start (malformed)
       // Remove from start marker to end of string (incomplete block)
@@ -536,5 +555,10 @@ export function cleanAddFileMarkers(text: string): string {
     }
   }
 
+  console.log("[cleanAddFileMarkers] Final result length:", result.length);
+  console.log(
+    "[cleanAddFileMarkers] Final result preview:",
+    result.substring(0, 200),
+  );
   return result.trim();
 }

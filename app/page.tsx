@@ -675,10 +675,18 @@ function ChatInterfaceInner() {
                   console.log(
                     "[Loom Debug] ADD_FILE marker received in stream chunk",
                   );
+                  console.log(
+                    "[Loom Debug] Current fullResponse length:",
+                    fullResponse.length,
+                  );
                 }
                 if (content.includes("[/ADD_FILE]")) {
                   console.log(
                     "[Loom Debug] /ADD_FILE marker received in stream chunk",
+                  );
+                  console.log(
+                    "[Loom Debug] Full ADD_FILE block received, fullResponse length:",
+                    fullResponse.length,
                   );
                 }
 
@@ -733,14 +741,24 @@ function ChatInterfaceInner() {
         "[Loom Debug] fullResponse end:",
         fullResponse.substring(Math.max(0, fullResponse.length - 200)),
       );
-      console.log(
-        "[Loom Debug] Contains ADD_FILE:",
-        fullResponse.includes("[ADD_FILE]"),
-      );
-      console.log(
-        "[Loom Debug] Contains /ADD_FILE:",
-        fullResponse.includes("[/ADD_FILE]"),
-      );
+      const hasAddFileStart = fullResponse.includes("[ADD_FILE]");
+      const hasAddFileEnd = fullResponse.includes("[/ADD_FILE]");
+      console.log("[Loom Debug] Contains ADD_FILE:", hasAddFileStart);
+      console.log("[Loom Debug] Contains /ADD_FILE:", hasAddFileEnd);
+
+      // Additional debug: if ADD_FILE markers exist but Loom isn't active, log warning
+      if (hasAddFileStart && hasAddFileEnd && !isLoomStillActive) {
+        console.warn(
+          "[Loom Debug] WARNING: ADD_FILE markers found but Loom is NOT active!",
+          "isLoomMode:",
+          currentLoom.state.isLoomMode,
+          "hasDocument:",
+          !!currentLoom.state.document,
+        );
+        console.log(
+          "[Loom Debug] ADD_FILE content will NOT be inserted into Loom because Loom is inactive",
+        );
+      }
 
       if (isLoomStillActive) {
         // Debug: log the full response before attempting to match
@@ -877,18 +895,40 @@ function ChatInterfaceInner() {
             editContent = editMatch[2].trim();
           } else {
             // Try ADD_FILE format
+            console.log("[Loom Debug] Trying ADD_FILE format match...");
             const addFileMatch = fullResponse.match(
               /\[ADD_FILE\]([\s\S]*?)\[\/ADD_FILE\]/,
             );
+            console.log(
+              "[Loom Debug] ADD_FILE regex match result:",
+              !!addFileMatch,
+            );
+
             if (addFileMatch) {
               console.log("[Loom Debug] Found ADD_FILE format");
               const jsonContent = addFileMatch[1];
+              console.log(
+                "[Loom Debug] ADD_FILE JSON content preview:",
+                jsonContent.substring(0, 200),
+              );
 
               // Extract content from JSON wrapper
               try {
                 const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+                console.log(
+                  "[Loom Debug] JSON object match result:",
+                  !!jsonMatch,
+                );
                 if (jsonMatch) {
+                  console.log(
+                    "[Loom Debug] Attempting JSON.parse on:",
+                    jsonMatch[0].substring(0, 100),
+                  );
                   const parsed = JSON.parse(jsonMatch[0]);
+                  console.log(
+                    "[Loom Debug] JSON parsed successfully, has content:",
+                    !!parsed.content,
+                  );
                   if (parsed.content) {
                     editContent = parsed.content;
                     console.log(
@@ -897,10 +937,16 @@ function ChatInterfaceInner() {
                     );
                   }
                 }
-              } catch {
+              } catch (parseError) {
+                console.error("[Loom Debug] JSON.parse failed:", parseError);
                 // Try regex fallback for malformed JSON
+                console.log("[Loom Debug] Trying regex fallback...");
                 const contentMatch = jsonContent.match(
                   /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+                );
+                console.log(
+                  "[Loom Debug] Regex fallback match result:",
+                  !!contentMatch,
                 );
                 if (contentMatch) {
                   editContent = contentMatch[1]
@@ -914,6 +960,12 @@ function ChatInterfaceInner() {
                   );
                 }
               }
+            } else {
+              console.log("[Loom Debug] No ADD_FILE match found in response");
+              console.log(
+                "[Loom Debug] Response preview for debugging:",
+                fullResponse.substring(0, 500),
+              );
             }
           }
 
