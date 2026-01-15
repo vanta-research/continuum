@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Pencil,
   FileText,
+  Star,
 } from "lucide-react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
@@ -303,13 +304,14 @@ function ChatInterfaceInner() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedModel, setSelectedModel] = useState("atom");
+  const [selectedModel, setSelectedModel] = useState("");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [enabledModels, setEnabledModels] = useState<
     Array<{ id: string; name: string; provider: string }>
   >([]);
   const [loadingEnabledModels, setLoadingEnabledModels] = useState(true); // Start true to prevent flash
+  const [defaultModel, setDefaultModel] = useState(""); // User's preferred default model
 
   // Check if user has configured any models
   const hasConfiguredModels = enabledModels.length > 0;
@@ -332,8 +334,31 @@ function ChatInterfaceInner() {
       const response = await fetch("/api/settings");
       const data = await response.json();
 
-      if (data.success && data.settings?.enabledModels) {
-        setEnabledModels(data.settings.enabledModels);
+      if (data.success && data.settings) {
+        const models = data.settings.enabledModels || [];
+        setEnabledModels(models);
+
+        // Store the default model preference
+        const savedDefault = data.settings.defaultModel || "";
+        setDefaultModel(savedDefault);
+
+        // Set selected model: use default if valid, otherwise use first enabled model
+        if (models.length > 0) {
+          const defaultIsValid =
+            savedDefault &&
+            models.some(
+              (m: { id: string; provider: string }) =>
+                `${m.provider}:${m.id}` === savedDefault,
+            );
+
+          if (defaultIsValid) {
+            setSelectedModel(savedDefault);
+          } else {
+            // Auto-select first model in the list
+            const firstModel = models[0];
+            setSelectedModel(`${firstModel.provider}:${firstModel.id}`);
+          }
+        }
       }
     } catch (error) {
       console.error("Failed to fetch enabled models:", error);
@@ -404,6 +429,22 @@ function ChatInterfaceInner() {
   useEffect(() => {
     fetchEnabledModels();
   }, [fetchEnabledModels]);
+
+  // Save the current model as the default
+  const saveAsDefaultModel = useCallback(async (modelValue: string) => {
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultModel: modelValue }),
+      });
+      if (response.ok) {
+        setDefaultModel(modelValue);
+      }
+    } catch (error) {
+      console.error("Failed to save default model:", error);
+    }
+  }, []);
 
   // Check if user is near the bottom of the scroll area
   const checkIfNearBottom = useCallback(() => {
@@ -1696,46 +1737,76 @@ function ChatInterfaceInner() {
                   </div>
                 </Link>
               ) : (
-                <Select value={selectedModel} onValueChange={setSelectedModel}>
-                  <SelectTrigger className="w-full bg-background/50">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Loading state */}
-                    {loadingEnabledModels && (
-                      <div className="px-2 py-1 text-xs text-muted-foreground">
-                        Loading models...
-                      </div>
-                    )}
-
-                    {/* User-configured models from settings */}
-                    {enabledModels.map((model) => (
-                      <SelectItem
-                        key={model.id}
-                        value={`${model.provider}:${model.id}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-xs px-1.5 py-0.5 rounded ${
-                              model.provider === "openai"
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : model.provider === "anthropic"
-                                  ? "bg-orange-500/20 text-orange-400"
-                                  : model.provider === "mistral"
-                                    ? "bg-blue-500/20 text-blue-400"
-                                    : model.provider === "openrouter"
-                                      ? "bg-purple-500/20 text-purple-400"
-                                      : "bg-zinc-500/20 text-zinc-400"
-                            }`}
-                          >
-                            {model.provider}
-                          </span>
-                          <span>{model.name}</span>
+                <div className="flex items-center gap-1">
+                  <Select
+                    value={selectedModel}
+                    onValueChange={setSelectedModel}
+                  >
+                    <SelectTrigger className="w-full bg-background/50">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Loading state */}
+                      {loadingEnabledModels && (
+                        <div className="px-2 py-1 text-xs text-muted-foreground">
+                          Loading models...
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      )}
+
+                      {/* User-configured models from settings */}
+                      {enabledModels.map((model) => {
+                        const modelValue = `${model.provider}:${model.id}`;
+                        const isDefault = modelValue === defaultModel;
+                        return (
+                          <SelectItem key={model.id} value={modelValue}>
+                            <div className="flex items-center gap-2">
+                              {isDefault && (
+                                <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                              )}
+                              <span
+                                className={`text-xs px-1.5 py-0.5 rounded ${
+                                  model.provider === "openai"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : model.provider === "anthropic"
+                                      ? "bg-orange-500/20 text-orange-400"
+                                      : model.provider === "mistral"
+                                        ? "bg-blue-500/20 text-blue-400"
+                                        : model.provider === "openrouter"
+                                          ? "bg-purple-500/20 text-purple-400"
+                                          : "bg-zinc-500/20 text-zinc-400"
+                                }`}
+                              >
+                                {model.provider}
+                              </span>
+                              <span>{model.name}</span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {/* Set as default button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => saveAsDefaultModel(selectedModel)}
+                    disabled={!selectedModel || selectedModel === defaultModel}
+                    title={
+                      selectedModel === defaultModel
+                        ? "This is the default model"
+                        : "Set as default model"
+                    }
+                  >
+                    <Star
+                      className={`h-4 w-4 ${
+                        selectedModel === defaultModel
+                          ? "text-yellow-500 fill-yellow-500"
+                          : "text-muted-foreground hover:text-yellow-500"
+                      }`}
+                    />
+                  </Button>
+                </div>
               )}
             </div>
             <Button

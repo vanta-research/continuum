@@ -25,6 +25,9 @@ interface Settings {
 
   // User-selected models to show in dropdown
   enabledModels: EnabledModel[];
+
+  // Default model for chat (format: "provider:model-id")
+  defaultModel: string;
 }
 
 const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
@@ -57,6 +60,7 @@ function loadSettings(): Settings {
     customEndpointUrl: "",
     customEndpointModelId: "",
     enabledModels: [],
+    defaultModel: "",
   };
 }
 
@@ -99,6 +103,7 @@ export async function POST(request: NextRequest) {
       customEndpointUrl,
       customEndpointModelId,
       enabledModels,
+      defaultModel,
     } = body;
 
     const settings = saveSettings({
@@ -110,6 +115,7 @@ export async function POST(request: NextRequest) {
       customEndpointUrl,
       customEndpointModelId,
       enabledModels,
+      defaultModel,
     });
 
     return NextResponse.json({
