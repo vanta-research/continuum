@@ -43,6 +43,22 @@ export interface ModelInfo {
   likes: number;
   ggufFiles: GGUFFile[];
   hasGGUF: boolean;
+  createdAt?: string;
+}
+
+export interface HFSearchResult {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  hasGGUF: boolean;
+  ggufFiles: GGUFFile[];
+  createdAt: string;
+  lastModified: string;
 }
 
 export interface LocalModel {
@@ -158,8 +174,13 @@ class ModelSystem {
 
   /**
    * Fetch all VANTA Research models from HuggingFace
+   * @param token - Optional HuggingFace token
+   * @param mostRecentOnly - If true, only return the most recently created GGUF model
    */
-  async fetchVantaModels(token?: string): Promise<ModelInfo[]> {
+  async fetchVantaModels(
+    token?: string,
+    mostRecentOnly: boolean = true,
+  ): Promise<ModelInfo[]> {
     try {
       const headers: Record<string, string> = {};
       if (token) {
@@ -167,7 +188,7 @@ class ModelSystem {
       }
 
       const response = await fetch(
-        `${HF_API_BASE}/models?author=${VANTA_RESEARCH_ORG}`,
+        `${HF_API_BASE}/models?author=${VANTA_RESEARCH_ORG}&sort=createdAt&direction=-1`,
         { headers },
       );
 
@@ -185,6 +206,15 @@ class ModelSystem {
 
       const modelInfos = await Promise.all(modelInfoPromises);
 
+      // Filter to only models with GGUF files
+      const ggufModels = modelInfos.filter((m) => m.hasGGUF);
+
+      if (mostRecentOnly && ggufModels.length > 0) {
+        // Return only the most recently created model with GGUF files
+        // Models are already sorted by createdAt descending from the API
+        return [ggufModels[0]];
+      }
+
       // Sort by downloads, prioritize models with GGUF files
       return modelInfos.sort((a, b) => {
         if (a.hasGGUF && !b.hasGGUF) return -1;
@@ -195,6 +225,112 @@ class ModelSystem {
       console.error("Error fetching VANTA models:", error);
       throw error;
     }
+  }
+
+  /**
+   * Search HuggingFace for GGUF models
+   * @param query - Search query
+   * @param token - Required HuggingFace token for search
+   * @param limit - Maximum number of results to return
+   */
+  async searchHuggingFaceModels(
+    query: string,
+    token: string,
+    limit: number = 20,
+  ): Promise<HFSearchResult[]> {
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      // Search for GGUF models on HuggingFace
+      const searchQuery = encodeURIComponent(`${query} gguf`);
+      const response = await fetch(
+        `${HF_API_BASE}/models?search=${searchQuery}&filter=gguf&sort=downloads&direction=-1&limit=${limit}`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Invalid or expired HuggingFace token");
+        }
+        throw new Error(`Search failed: ${response.status}`);
+      }
+
+      const models: HFModel[] = await response.json();
+
+      // Fetch GGUF files for each model (in parallel with concurrency limit)
+      const results: HFSearchResult[] = [];
+      const batchSize = 5; // Process 5 models at a time to avoid rate limits
+
+      for (let i = 0; i < models.length; i += batchSize) {
+        const batch = models.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (model) => {
+            const ggufFiles = await this.fetchModelGGUFFiles(model.id, token);
+            return this.transformToSearchResult(model, ggufFiles);
+          }),
+        );
+        results.push(...batchResults);
+      }
+
+      // Filter to only models that actually have GGUF files
+      return results.filter((r) => r.hasGGUF);
+    } catch (error) {
+      console.error("Error searching HuggingFace models:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Transform HF model data to search result format
+   */
+  private transformToSearchResult(
+    model: HFModel,
+    ggufFiles: GGUFFile[],
+  ): HFSearchResult {
+    const [author, ...nameParts] = model.id.split("/");
+    const shortName = nameParts.join("/") || model.id;
+    const displayName = shortName
+      .split("-")
+      .map((part) => {
+        if (/^\d+b$/i.test(part)) {
+          return part.toUpperCase();
+        }
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(" ");
+
+    const relevantTags = model.tags.filter(
+      (tag) =>
+        !tag.startsWith("base_model:") &&
+        !tag.startsWith("license:") &&
+        !tag.startsWith("dataset:") &&
+        !tag.startsWith("doi:") &&
+        ![
+          "en",
+          "region:us",
+          "endpoints_compatible",
+          "safetensors",
+          "transformers",
+          "peft",
+        ].includes(tag),
+    );
+
+    return {
+      id: model.id,
+      name: shortName,
+      displayName,
+      description: relevantTags.slice(0, 5).join(", ") || "HuggingFace model",
+      author: author || "unknown",
+      downloads: model.downloads,
+      likes: model.likes,
+      tags: relevantTags.slice(0, 8),
+      hasGGUF: ggufFiles.length > 0,
+      ggufFiles,
+      createdAt: model.createdAt,
+      lastModified: model.createdAt, // HF API doesn't always provide lastModified separately
+    };
   }
 
   /**

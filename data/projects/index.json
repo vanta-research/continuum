@@ -3,13 +3,13 @@
     {
       "id": "proj_07628fed",
       "name": "My Second Project",
-      "updatedAt": 1768417075646
+      "updatedAt": 1768445945538
     },
     {
       "id": "proj_5a68c081",
       "name": "My First Project",
-      "updatedAt": 1768421519701
+      "updatedAt": 1768444724742
     }
   ],
-  "activeProjectId": "proj_5a68c081"
+  "activeProjectId": "proj_07628fed"
 }

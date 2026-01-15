@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,21 @@ interface DownloadProgress {
   message: string;
 }
 
+interface HFSearchResult {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  hasGGUF: boolean;
+  ggufFiles: GGUFFile[];
+  createdAt: string;
+  lastModified: string;
+}
+
 interface ModelDownloaderProps {
   hfToken: string;
   onTokenChange: (token: string) => void;
@@ -84,6 +100,15 @@ export default function ModelDownloader({
     Map<string, DownloadProgress>
   >(new Map());
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
+
+  // HuggingFace search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<HFSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [expandedSearchResults, setExpandedSearchResults] = useState<
+    Set<string>
+  >(new Set());
 
   // Format file size
   const formatSize = (bytes: number): string => {
@@ -361,6 +386,196 @@ export default function ModelDownloader({
     });
   };
 
+  // Toggle search result expansion
+  const toggleSearchResultExpanded = (modelId: string) => {
+    setExpandedSearchResults((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) {
+        next.delete(modelId);
+      } else {
+        next.add(modelId);
+      }
+      return next;
+    });
+  };
+
+  // Search HuggingFace models
+  const searchHuggingFace = async () => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchError("Search query must be at least 2 characters");
+      return;
+    }
+
+    if (!hfToken || !tokenValidation.valid) {
+      setSearchError("Please authenticate with HuggingFace first");
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+
+    try {
+      const params = new URLSearchParams({
+        q: searchQuery.trim(),
+        token: hfToken,
+        limit: "20",
+      });
+
+      const response = await fetch(`/api/models/search?${params}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setSearchResults(data.results);
+        if (data.results.length === 0) {
+          setSearchError("No GGUF models found matching your search");
+        }
+      } else {
+        setSearchError(data.error || "Search failed");
+      }
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Search failed");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Download from search result
+  const downloadSearchResult = async (
+    result: HFSearchResult,
+    file: GGUFFile,
+  ) => {
+    const fileKey = `${result.id}/${file.name}`;
+    setDownloadingFiles((prev) => new Set(prev).add(fileKey));
+    setDownloadProgress((prev) => {
+      const next = new Map(prev);
+      next.set(fileKey, {
+        status: "starting",
+        progress: 0,
+        total: file.size,
+        percent: 0,
+        message: "Starting download...",
+      });
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/models/download-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelId: result.id,
+          fileName: file.name,
+          downloadUrl: file.downloadUrl,
+          size: file.size,
+          quantization: file.quantization,
+          token: hfToken || undefined,
+        }),
+      });
+
+      // Check if we got JSON response (already downloaded or error)
+      const contentType = response.headers.get("content-type");
+      if (contentType?.includes("application/json")) {
+        const data = await response.json();
+        if (data.alreadyExists) {
+          setDownloadProgress((prev) => {
+            const next = new Map(prev);
+            next.set(fileKey, {
+              status: "complete",
+              progress: file.size,
+              total: file.size,
+              percent: 100,
+              message: "Already downloaded!",
+            });
+            return next;
+          });
+          fetchLocalModels();
+          return;
+        }
+        if (!data.success) {
+          throw new Error(data.error || "Download failed");
+        }
+      }
+
+      // Handle SSE stream (same logic as downloadModel)
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (eventType === "progress" || eventType === "complete") {
+                setDownloadProgress((prev) => {
+                  const next = new Map(prev);
+                  next.set(fileKey, {
+                    status: data.status,
+                    progress: data.progress || 0,
+                    total: data.total || file.size,
+                    percent: data.percent || 0,
+                    message: data.message || "",
+                  });
+                  return next;
+                });
+
+                if (eventType === "complete") {
+                  fetchLocalModels();
+                }
+              } else if (eventType === "error") {
+                throw new Error(data.message || "Download failed");
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) {
+                console.error("Failed to parse SSE data:", line);
+              } else {
+                throw e;
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Download failed";
+      setError(errorMessage);
+      setDownloadProgress((prev) => {
+        const next = new Map(prev);
+        next.set(fileKey, {
+          status: "error",
+          progress: 0,
+          total: file.size,
+          percent: 0,
+          message: errorMessage,
+        });
+        return next;
+      });
+    } finally {
+      setDownloadingFiles((prev) => {
+        const next = new Set(prev);
+        next.delete(fileKey);
+        return next;
+      });
+    }
+  };
+
   // Initial load
   useEffect(() => {
     fetchAvailableModels();
@@ -564,12 +779,216 @@ export default function ModelDownloader({
         </div>
       )}
 
-      {/* Available Models Section */}
+      {/* HuggingFace Search Section - Only visible when authenticated */}
+      {tokenValidation.valid && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-muted-foreground" />
+            <h3 className="font-semibold">Search HuggingFace Models</h3>
+          </div>
+
+          <Card className="p-4 bg-background/50">
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Search for GGUF models on HuggingFace. Results are filtered to
+                only show models with downloadable GGUF files.
+              </p>
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Search for models (e.g., llama, mistral, phi)..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        searchHuggingFace();
+                      }
+                    }}
+                    className="bg-background/50"
+                  />
+                </div>
+                <Button
+                  onClick={searchHuggingFace}
+                  disabled={isSearching || searchQuery.trim().length < 2}
+                >
+                  {isSearching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4 mr-1" />
+                      Search
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {searchError && (
+                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+                  <AlertCircle className="h-4 w-4" />
+                  {searchError}
+                  <button
+                    onClick={() => setSearchError(null)}
+                    className="ml-auto hover:text-destructive/80"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
+              {isSearching && (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">
+                    Searching HuggingFace...
+                  </span>
+                </div>
+              )}
+
+              {searchResults.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm text-muted-foreground">
+                    Found {searchResults.length} model
+                    {searchResults.length !== 1 ? "s" : ""} with GGUF files
+                  </div>
+                  {searchResults.map((result) => (
+                    <Card
+                      key={result.id}
+                      className="bg-muted/30 overflow-hidden"
+                    >
+                      <button
+                        onClick={() => toggleSearchResultExpanded(result.id)}
+                        className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold">
+                              {result.displayName}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              by {result.author}
+                            </span>
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                              {result.ggufFiles.length} GGUF
+                              {result.ggufFiles.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="text-sm text-muted-foreground truncate mt-1">
+                            {result.description}
+                          </div>
+                          <div className="text-xs text-muted-foreground/70 mt-1">
+                            {result.downloads.toLocaleString()} downloads
+                          </div>
+                        </div>
+                        {expandedSearchResults.has(result.id) ? (
+                          <ChevronUp className="h-5 w-5 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                        )}
+                      </button>
+
+                      {expandedSearchResults.has(result.id) && (
+                        <div className="border-t border-border/50 p-4 space-y-2">
+                          <div className="text-sm text-muted-foreground mb-3">
+                            Select a quantization to download:
+                          </div>
+                          {result.ggufFiles.map((file) => {
+                            const fileKey = `${result.id}/${file.name}`;
+                            const isDownloading = downloadingFiles.has(fileKey);
+                            const isDownloaded = isFileDownloaded(
+                              result.id,
+                              file.name,
+                            );
+                            const progress = downloadProgress.get(fileKey);
+
+                            return (
+                              <div
+                                key={file.path}
+                                className="p-3 bg-background/50 rounded-lg"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-mono text-sm truncate">
+                                      {file.name}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatSize(file.size)} •{" "}
+                                      {file.quantization}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant={
+                                      isDownloaded ? "secondary" : "default"
+                                    }
+                                    disabled={isDownloading || isDownloaded}
+                                    onClick={() =>
+                                      downloadSearchResult(result, file)
+                                    }
+                                    className="ml-2"
+                                  >
+                                    {isDownloading ? (
+                                      <>
+                                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                        Downloading
+                                      </>
+                                    ) : isDownloaded ? (
+                                      <>
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Downloaded
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download className="h-4 w-4 mr-1" />
+                                        Download
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+
+                                {progress && (
+                                  <ProgressBar
+                                    progress={progress}
+                                    fileKey={fileKey}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Prompt to authenticate for HF search */}
+      {!tokenValidation.valid && (
+        <Card className="p-4 bg-muted/30 border-dashed">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Search className="h-5 w-5" />
+            <div>
+              <div className="font-medium">Search HuggingFace Models</div>
+              <div className="text-sm">
+                Authenticate with your HuggingFace token above to search for
+                GGUF models from the entire HuggingFace Hub.
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Available VANTA Research Models Section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Download className="h-5 w-5 text-muted-foreground" />
-            <h3 className="font-semibold">Available VANTA Research Models</h3>
+            <h3 className="font-semibold">Latest VANTA Research Model</h3>
           </div>
           <Button
             variant="outline"
