@@ -308,7 +308,10 @@ function ChatInterfaceInner() {
   const [enabledModels, setEnabledModels] = useState<
     Array<{ id: string; name: string; provider: string }>
   >([]);
-  const [loadingEnabledModels, setLoadingEnabledModels] = useState(false);
+  const [loadingEnabledModels, setLoadingEnabledModels] = useState(true); // Start true to prevent flash
+
+  // Check if user has configured any models
+  const hasConfiguredModels = enabledModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1556,69 +1559,58 @@ function ChatInterfaceInner() {
               <label className="mb-2 block text-xs font-medium text-muted-foreground">
                 Model
               </label>
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-full bg-background/50">
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* Local models */}
-                  <SelectItem value="atom">Atom (Local)</SelectItem>
-                  <SelectItem value="atom-large-experimental">
-                    Atom-Large-Experimental
-                  </SelectItem>
-                  <SelectItem value="loux-large-experimental">
-                    Loux-Large-Experimental
-                  </SelectItem>
-
-                  {/* User-selected models from settings */}
-                  {enabledModels.length > 0 && (
-                    <>
-                      <div className="px-2 py-1 text-xs text-muted-foreground bg-muted/50">
-                        Your Models
+              {!loadingEnabledModels && !hasConfiguredModels ? (
+                /* Show setup prompt when no models configured */
+                <Link href="/settings">
+                  <div className="flex items-center justify-between w-full h-9 px-3 py-2 text-sm rounded-md border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
+                    <span className="text-primary">
+                      Configure a model provider
+                    </span>
+                    <Settings className="h-4 w-4 text-primary" />
+                  </div>
+                </Link>
+              ) : (
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger className="w-full bg-background/50">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* Loading state */}
+                    {loadingEnabledModels && (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">
+                        Loading models...
                       </div>
-                      {enabledModels.map((model) => (
-                        <SelectItem
-                          key={model.id}
-                          value={`${model.provider}:${model.id}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-xs px-1.5 py-0.5 rounded ${
-                                model.provider === "openai"
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : model.provider === "anthropic"
-                                    ? "bg-orange-500/20 text-orange-400"
-                                    : model.provider === "mistral"
-                                      ? "bg-blue-500/20 text-blue-400"
-                                      : model.provider === "openrouter"
-                                        ? "bg-purple-500/20 text-purple-400"
-                                        : "bg-zinc-500/20 text-zinc-400"
-                              }`}
-                            >
-                              {model.provider}
-                            </span>
-                            <span>{model.name}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </>
-                  )}
+                    )}
 
-                  {/* Loading state */}
-                  {loadingEnabledModels && (
-                    <div className="px-2 py-1 text-xs text-muted-foreground">
-                      Loading models...
-                    </div>
-                  )}
-
-                  {/* Hint when no models selected */}
-                  {!loadingEnabledModels && enabledModels.length === 0 && (
-                    <div className="px-2 py-1 text-xs text-muted-foreground">
-                      Configure models in Settings
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
+                    {/* User-configured models from settings */}
+                    {enabledModels.map((model) => (
+                      <SelectItem
+                        key={model.id}
+                        value={`${model.provider}:${model.id}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs px-1.5 py-0.5 rounded ${
+                              model.provider === "openai"
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : model.provider === "anthropic"
+                                  ? "bg-orange-500/20 text-orange-400"
+                                  : model.provider === "mistral"
+                                    ? "bg-blue-500/20 text-blue-400"
+                                    : model.provider === "openrouter"
+                                      ? "bg-purple-500/20 text-purple-400"
+                                      : "bg-zinc-500/20 text-zinc-400"
+                            }`}
+                          >
+                            {model.provider}
+                          </span>
+                          <span>{model.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
@@ -1895,46 +1887,64 @@ function ChatInterfaceInner() {
               )}
 
               <div className="border-t border-border/30 p-4 bg-background/20 backdrop-blur-xl">
-                <div className="space-y-3">
-                  <FileUpload
-                    attachments={attachments}
-                    onAddFile={handleAddFile}
-                    onRemoveFile={handleRemoveFile}
-                    disabled={isLoading}
-                  />
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <Textarea
-                        ref={textareaRef}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Message Continuum..."
-                        className="min-h-[50px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
-                        disabled={isLoading}
-                      />
+                {!loadingEnabledModels && !hasConfiguredModels ? (
+                  /* Show setup prompt when no models configured */
+                  <Link href="/settings" className="block">
+                    <div className="flex items-center justify-center gap-3 p-4 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
+                      <Settings className="h-5 w-5 text-primary" />
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-primary">
+                          Configure a model provider to start chatting
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Click here to set up OpenAI, Anthropic, Mistral, or
+                          other providers
+                        </p>
+                      </div>
                     </div>
-                    {isLoading ? (
-                      <Button
-                        onClick={handleStopGeneration}
-                        className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
-                        size="icon"
-                        title="Stop generation"
-                      >
-                        <Square className="h-4 w-4" />
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={handleSendMessage}
-                        disabled={!input.trim() && attachments.length === 0}
-                        className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
-                        size="icon"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    )}
+                  </Link>
+                ) : (
+                  <div className="space-y-3">
+                    <FileUpload
+                      attachments={attachments}
+                      onAddFile={handleAddFile}
+                      onRemoveFile={handleRemoveFile}
+                      disabled={isLoading}
+                    />
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Textarea
+                          ref={textareaRef}
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Message Continuum..."
+                          className="min-h-[50px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
+                          disabled={isLoading}
+                        />
+                      </div>
+                      {isLoading ? (
+                        <Button
+                          onClick={handleStopGeneration}
+                          className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
+                          size="icon"
+                          title="Stop generation"
+                        >
+                          <Square className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleSendMessage}
+                          disabled={!input.trim() && attachments.length === 0}
+                          className="h-[50px] w-[50px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
+                          size="icon"
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -2123,44 +2133,64 @@ function ChatInterfaceInner() {
 
             <div className="border-t border-border/30 p-6 bg-background/20 backdrop-blur-xl">
               <div className="mx-auto max-w-4xl space-y-4">
-                <FileUpload
-                  attachments={attachments}
-                  onAddFile={handleAddFile}
-                  onRemoveFile={handleRemoveFile}
-                  disabled={isLoading}
-                />
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <Textarea
-                      ref={textareaRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Message Continuum..."
-                      className="min-h-[60px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
+                {!loadingEnabledModels && !hasConfiguredModels ? (
+                  /* Show setup prompt when no models configured */
+                  <Link href="/settings" className="block">
+                    <div className="flex items-center justify-center gap-3 p-6 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
+                      <Settings className="h-6 w-6 text-primary" />
+                      <div className="text-center">
+                        <p className="text-base font-medium text-primary">
+                          Configure a model provider to start chatting
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Click here to set up OpenAI, Anthropic, Mistral, or
+                          other providers
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                ) : (
+                  <>
+                    <FileUpload
+                      attachments={attachments}
+                      onAddFile={handleAddFile}
+                      onRemoveFile={handleRemoveFile}
                       disabled={isLoading}
                     />
-                  </div>
-                  {isLoading ? (
-                    <Button
-                      onClick={handleStopGeneration}
-                      className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
-                      size="icon"
-                      title="Stop generation"
-                    >
-                      <Square className="h-5 w-5" />
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleSendMessage}
-                      disabled={!input.trim() && attachments.length === 0}
-                      className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
-                      size="icon"
-                    >
-                      <Send className="h-5 w-5" />
-                    </Button>
-                  )}
-                </div>
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <Textarea
+                          ref={textareaRef}
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Message Continuum..."
+                          className="min-h-[60px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
+                          disabled={isLoading}
+                        />
+                      </div>
+                      {isLoading ? (
+                        <Button
+                          onClick={handleStopGeneration}
+                          className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-destructive to-destructive/90 hover:from-destructive/90 hover:to-destructive shadow-lg shadow-destructive/20 transition-all duration-200"
+                          size="icon"
+                          title="Stop generation"
+                        >
+                          <Square className="h-5 w-5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleSendMessage}
+                          disabled={!input.trim() && attachments.length === 0}
+                          className="h-[60px] w-[60px] shrink-0 bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg shadow-primary/20 transition-all duration-200"
+                          size="icon"
+                        >
+                          <Send className="h-5 w-5" />
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                )}
                 <p className="text-center text-xs text-muted-foreground/70">
                   VANTA Research - AI for humans
                 </p>
