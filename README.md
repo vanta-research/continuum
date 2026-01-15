@@ -21,7 +21,7 @@
 
 ---
 
-## What Is This?
+## What Is Continuum?
 
 Continuum is a desktop workspace where you and AI write, research, and think together in real-time. 
 
