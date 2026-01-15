@@ -68,6 +68,7 @@ import {
   useProject,
 } from "@/components/projects/project-provider";
 import { ProjectSwitcher } from "@/components/projects/project-switcher";
+import { loadClientKeys } from "@/lib/client-keys";
 import type {
   StoredSession,
   StoredMessage,
@@ -567,6 +568,9 @@ function ChatInterfaceInner() {
       // Create abort controller for this request
       abortControllerRef.current = new AbortController();
 
+      // Load API keys from client-side storage
+      const clientKeys = loadClientKeys();
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -583,6 +587,14 @@ function ChatInterfaceInner() {
             role: m.role,
             content: m.content,
           })),
+          // Pass API keys from client-side storage (never stored on server)
+          apiKeys: {
+            openaiApiKey: clientKeys.openaiApiKey,
+            anthropicApiKey: clientKeys.anthropicApiKey,
+            mistralApiKey: clientKeys.mistralApiKey,
+            openrouterApiKey: clientKeys.openrouterApiKey,
+            customEndpointApiKey: clientKeys.customEndpointApiKey,
+          },
           ...loomPayload,
         }),
         signal: abortControllerRef.current.signal,
@@ -1336,6 +1348,9 @@ function ChatInterfaceInner() {
           content: m.content,
         }));
 
+      // Load API keys from client-side storage
+      const clientKeys = loadClientKeys();
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -1348,6 +1363,14 @@ function ChatInterfaceInner() {
           attachments: messageAttachments,
           webSearchEnabled: webSearchEnabled,
           history: historyMessages,
+          // Pass API keys from client-side storage (never stored on server)
+          apiKeys: {
+            openaiApiKey: clientKeys.openaiApiKey,
+            anthropicApiKey: clientKeys.anthropicApiKey,
+            mistralApiKey: clientKeys.mistralApiKey,
+            openrouterApiKey: clientKeys.openrouterApiKey,
+            customEndpointApiKey: clientKeys.customEndpointApiKey,
+          },
           ...loomPayload,
         }),
       });
@@ -1889,20 +1912,33 @@ function ChatInterfaceInner() {
               <div className="border-t border-border/30 p-4 bg-background/20 backdrop-blur-xl">
                 {!loadingEnabledModels && !hasConfiguredModels ? (
                   /* Show setup prompt when no models configured */
-                  <Link href="/settings" className="block">
-                    <div className="flex items-center justify-center gap-3 p-4 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
-                      <Settings className="h-5 w-5 text-primary" />
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-primary">
-                          Configure a model provider to start chatting
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Click here to set up OpenAI, Anthropic, Mistral, or
-                          other providers
-                        </p>
+                  <div className="space-y-3">
+                    <Link href="/settings" className="block">
+                      <div className="flex items-center justify-center gap-3 p-4 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
+                        <Settings className="h-5 w-5 text-primary" />
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-primary">
+                            Configure a model provider to start chatting
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Click here to set up OpenAI, Anthropic, Mistral, or
+                            other providers
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                    <p className="text-xs text-center text-muted-foreground">
+                      Don&apos;t have an API key?{" "}
+                      <a
+                        href="https://openrouter.ai/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Get a free one from OpenRouter
+                      </a>
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     <FileUpload
@@ -2135,20 +2171,33 @@ function ChatInterfaceInner() {
               <div className="mx-auto max-w-4xl space-y-4">
                 {!loadingEnabledModels && !hasConfiguredModels ? (
                   /* Show setup prompt when no models configured */
-                  <Link href="/settings" className="block">
-                    <div className="flex items-center justify-center gap-3 p-6 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
-                      <Settings className="h-6 w-6 text-primary" />
-                      <div className="text-center">
-                        <p className="text-base font-medium text-primary">
-                          Configure a model provider to start chatting
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Click here to set up OpenAI, Anthropic, Mistral, or
-                          other providers
-                        </p>
+                  <div className="space-y-3">
+                    <Link href="/settings" className="block">
+                      <div className="flex items-center justify-center gap-3 p-6 rounded-lg border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer">
+                        <Settings className="h-6 w-6 text-primary" />
+                        <div className="text-center">
+                          <p className="text-base font-medium text-primary">
+                            Configure a model provider to start chatting
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Click here to set up OpenAI, Anthropic, Mistral, or
+                            other providers
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                    <p className="text-sm text-center text-muted-foreground">
+                      Don&apos;t have an API key?{" "}
+                      <a
+                        href="https://openrouter.ai/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Get a free one from OpenRouter
+                      </a>
+                    </p>
+                  </div>
                 ) : (
                   <>
                     <FileUpload

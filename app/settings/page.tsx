@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   List,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,11 @@ import {
   ACCENT_COLORS,
   AccentColor,
 } from "@/components/accent-color-provider";
+import {
+  loadClientKeys,
+  saveClientKeys,
+  type ClientAPIKeys,
+} from "@/lib/client-keys";
 
 // Provider configuration type
 interface ProviderConfig {
@@ -140,18 +146,34 @@ function SettingsContent() {
   const [maxTokens, setMaxTokens] = useState([2048]);
   const [streamResponse, setStreamResponse] = useState(true);
   const [selectedModel, setSelectedModel] = useState("atom");
-  const [hfToken, setHfToken] = useState("");
 
-  // API Keys
+  // API Keys - stored in localStorage (client-side only for security)
+  const [hfToken, setHfToken] = useState("");
   const [mistralApiKey, setMistralApiKey] = useState("");
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
-
-  // Custom endpoint
-  const [customEndpointUrl, setCustomEndpointUrl] = useState("");
   const [customEndpointApiKey, setCustomEndpointApiKey] = useState("");
+
+  // Custom endpoint (non-sensitive settings - stored on server)
+  const [customEndpointUrl, setCustomEndpointUrl] = useState("");
   const [customEndpointModelId, setCustomEndpointModelId] = useState("");
+
+  // Load API keys from localStorage on mount
+  useEffect(() => {
+    const keys = loadClientKeys();
+    setHfToken(keys.hfToken);
+    setMistralApiKey(keys.mistralApiKey);
+    setOpenaiApiKey(keys.openaiApiKey);
+    setAnthropicApiKey(keys.anthropicApiKey);
+    setOpenrouterApiKey(keys.openrouterApiKey);
+    setCustomEndpointApiKey(keys.customEndpointApiKey);
+  }, []);
+
+  // Save API keys to localStorage whenever they change
+  const saveApiKeysToLocalStorage = (updates: Partial<ClientAPIKeys>) => {
+    saveClientKeys(updates);
+  };
 
   // Visibility toggles for API keys
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -200,19 +222,10 @@ function SettingsContent() {
                 providerExists ? data.settings.selectedModel : "atom",
               );
             }
-            if (data.settings.hfToken) setHfToken(data.settings.hfToken);
-            if (data.settings.mistralApiKey)
-              setMistralApiKey(data.settings.mistralApiKey);
-            if (data.settings.openaiApiKey)
-              setOpenaiApiKey(data.settings.openaiApiKey);
-            if (data.settings.anthropicApiKey)
-              setAnthropicApiKey(data.settings.anthropicApiKey);
-            if (data.settings.openrouterApiKey)
-              setOpenrouterApiKey(data.settings.openrouterApiKey);
+            // API keys are loaded from localStorage, not from server
+            // Only load non-sensitive settings from server
             if (data.settings.customEndpointUrl)
               setCustomEndpointUrl(data.settings.customEndpointUrl);
-            if (data.settings.customEndpointApiKey)
-              setCustomEndpointApiKey(data.settings.customEndpointApiKey);
             if (data.settings.customEndpointModelId)
               setCustomEndpointModelId(data.settings.customEndpointModelId);
             if (data.settings.enabledModels)
@@ -228,6 +241,17 @@ function SettingsContent() {
 
   const handleSave = async () => {
     try {
+      // Save API keys to localStorage (client-side only)
+      saveApiKeysToLocalStorage({
+        hfToken,
+        mistralApiKey,
+        openaiApiKey,
+        anthropicApiKey,
+        openrouterApiKey,
+        customEndpointApiKey,
+      });
+
+      // Save non-sensitive settings to server
       const response = await fetch("/api/settings", {
         method: "POST",
         headers: {
@@ -239,15 +263,10 @@ function SettingsContent() {
           maxTokens: maxTokens[0],
           streamResponse,
           selectedModel,
-          hfToken,
-          mistralApiKey,
-          openaiApiKey,
-          anthropicApiKey,
-          openrouterApiKey,
           customEndpointUrl,
-          customEndpointApiKey,
           customEndpointModelId,
           enabledModels,
+          // Don't send API keys to server
         }),
       });
 
@@ -294,7 +313,8 @@ function SettingsContent() {
 
   const handleTokenChange = (token: string) => {
     setHfToken(token);
-    handleSave();
+    // Save HF token to localStorage immediately
+    saveApiKeysToLocalStorage({ hfToken: token });
   };
 
   const toggleKeyVisibility = (keyId: string) => {
@@ -776,10 +796,21 @@ function SettingsContent() {
                     <Key className="h-5 w-5 text-primary" />
                     <h2 className="text-lg font-semibold">API Keys</h2>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Configure API keys for cloud providers. Keys are stored
-                    locally and never sent to third parties.
-                  </p>
+
+                  {/* Security notice */}
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                    <ShieldCheck className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium text-green-500">
+                        Your keys stay on your device
+                      </p>
+                      <p className="text-muted-foreground mt-1">
+                        API keys are stored in your browser&apos;s local storage
+                        and are never sent to our servers. They are only used to
+                        make direct requests to the respective provider APIs.
+                      </p>
+                    </div>
+                  </div>
 
                   <div className="space-y-6">
                     {PROVIDERS.filter(

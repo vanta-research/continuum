@@ -22,19 +22,22 @@ const ANTHROPIC_MODEL_ID =
 const OPENROUTER_MODEL_ID =
   process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4";
 
-// Settings interface
+// Settings interface for non-sensitive settings loaded from server
 interface AppSettings {
-  mistralApiKey?: string;
-  openaiApiKey?: string;
-  anthropicApiKey?: string;
-  openrouterApiKey?: string;
   customEndpointUrl?: string;
-  customEndpointApiKey?: string;
   customEndpointModelId?: string;
-  hfToken?: string;
 }
 
-// Load settings from file to get API keys
+// Client-provided API keys interface (passed in request body)
+interface ClientAPIKeys {
+  openaiApiKey?: string;
+  anthropicApiKey?: string;
+  mistralApiKey?: string;
+  openrouterApiKey?: string;
+  customEndpointApiKey?: string;
+}
+
+// Load non-sensitive settings from file
 function loadSettings(): AppSettings {
   try {
     const settingsPath = path.join(process.cwd(), "data", "settings.json");
@@ -48,28 +51,24 @@ function loadSettings(): AppSettings {
   return {};
 }
 
-// Get API keys from settings file or environment
-function getMistralApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.mistralApiKey || process.env.MISTRAL_API_KEY;
+// Get API keys from client-provided keys or fall back to environment variables
+function getMistralApiKey(clientKeys?: ClientAPIKeys): string | undefined {
+  return clientKeys?.mistralApiKey || process.env.MISTRAL_API_KEY;
 }
 
-function getOpenAIApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.openaiApiKey || process.env.OPENAI_API_KEY;
+function getOpenAIApiKey(clientKeys?: ClientAPIKeys): string | undefined {
+  return clientKeys?.openaiApiKey || process.env.OPENAI_API_KEY;
 }
 
-function getAnthropicApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+function getAnthropicApiKey(clientKeys?: ClientAPIKeys): string | undefined {
+  return clientKeys?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
 }
 
-function getOpenRouterApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
+function getOpenRouterApiKey(clientKeys?: ClientAPIKeys): string | undefined {
+  return clientKeys?.openrouterApiKey || process.env.OPENROUTER_API_KEY;
 }
 
-function getCustomEndpointConfig(): {
+function getCustomEndpointConfig(clientKeys?: ClientAPIKeys): {
   url?: string;
   apiKey?: string;
   modelId?: string;
@@ -78,7 +77,7 @@ function getCustomEndpointConfig(): {
   return {
     url: settings.customEndpointUrl || process.env.CUSTOM_ENDPOINT_URL,
     apiKey:
-      settings.customEndpointApiKey || process.env.CUSTOM_ENDPOINT_API_KEY,
+      clientKeys?.customEndpointApiKey || process.env.CUSTOM_ENDPOINT_API_KEY,
     modelId:
       settings.customEndpointModelId || process.env.CUSTOM_ENDPOINT_MODEL_ID,
   };
@@ -481,8 +480,11 @@ function buildEnhancedMessage(
   return enhancedMessage;
 }
 
-async function streamMistralResponse(messages: ChatMessage[]) {
-  const apiKey = getMistralApiKey();
+async function streamMistralResponse(
+  messages: ChatMessage[],
+  clientKeys?: ClientAPIKeys,
+) {
+  const apiKey = getMistralApiKey(clientKeys);
   if (!apiKey) {
     throw new Error(
       "Mistral API key not configured. Please add your API key in Settings.",
@@ -520,8 +522,9 @@ async function streamMistralResponse(messages: ChatMessage[]) {
  */
 async function streamOpenAIResponse(
   messages: Array<{ role: string; content: string | object[] }>,
+  clientKeys?: ClientAPIKeys,
 ) {
-  const apiKey = getOpenAIApiKey();
+  const apiKey = getOpenAIApiKey(clientKeys);
 
   if (!apiKey) {
     throw new Error(
@@ -562,8 +565,9 @@ async function streamOpenAIResponse(
 async function streamAnthropicResponse(
   messages: Array<{ role: string; content: string | object[] }>,
   systemPrompt: string,
+  clientKeys?: ClientAPIKeys,
 ) {
-  const apiKey = getAnthropicApiKey();
+  const apiKey = getAnthropicApiKey(clientKeys);
 
   if (!apiKey) {
     throw new Error(
@@ -615,8 +619,9 @@ async function streamAnthropicResponse(
 async function streamOpenRouterResponse(
   messages: Array<{ role: string; content: string | object[] }>,
   modelId?: string,
+  clientKeys?: ClientAPIKeys,
 ) {
-  const apiKey = getOpenRouterApiKey();
+  const apiKey = getOpenRouterApiKey(clientKeys);
 
   if (!apiKey) {
     throw new Error(
@@ -661,8 +666,9 @@ async function streamOpenRouterResponse(
  */
 async function streamCustomEndpointResponse(
   messages: Array<{ role: string; content: string | object[] }>,
+  clientKeys?: ClientAPIKeys,
 ) {
-  const config = getCustomEndpointConfig();
+  const config = getCustomEndpointConfig(clientKeys);
 
   if (!config.url) {
     throw new Error(
@@ -871,7 +877,18 @@ export async function POST(request: NextRequest) {
       loomEnabled = false,
       loomContext,
       history = [],
+      // Client-provided API keys (stored in browser localStorage)
+      apiKeys = {},
     } = body;
+
+    // Extract client API keys
+    const clientKeys: ClientAPIKeys = {
+      openaiApiKey: apiKeys.openaiApiKey,
+      anthropicApiKey: apiKeys.anthropicApiKey,
+      mistralApiKey: apiKeys.mistralApiKey,
+      openrouterApiKey: apiKeys.openrouterApiKey,
+      customEndpointApiKey: apiKeys.customEndpointApiKey,
+    };
 
     // Debug: Log the model being requested
     console.log(
@@ -1034,15 +1051,23 @@ export async function POST(request: NextRequest) {
 
     if (model === "openai") {
       console.log("[Chat API] -> Using OpenAI provider");
-      streamBody = await streamOpenAIResponse(messages);
+      streamBody = await streamOpenAIResponse(messages, clientKeys);
     } else if (model === "anthropic") {
       // Anthropic needs system prompt passed separately
-      streamBody = await streamAnthropicResponse(messages, fullSystemPrompt);
+      streamBody = await streamAnthropicResponse(
+        messages,
+        fullSystemPrompt,
+        clientKeys,
+      );
       // Mark as Anthropic for different SSE parsing
       (streamBody as any).__serverType = "anthropic";
     } else if (model === "openrouter") {
       console.log("[Chat API] -> Using OpenRouter provider (default model)");
-      streamBody = await streamOpenRouterResponse(messages);
+      streamBody = await streamOpenRouterResponse(
+        messages,
+        undefined,
+        clientKeys,
+      );
       // Mark as OpenRouter (OpenAI-compatible) for response parsing
       (streamBody as any).__serverType = "openrouter";
     } else if (model.startsWith("openrouter:")) {
@@ -1052,19 +1077,23 @@ export async function POST(request: NextRequest) {
         "[Chat API] -> Using OpenRouter provider with model:",
         modelId,
       );
-      streamBody = await streamOpenRouterResponse(messages, modelId);
+      streamBody = await streamOpenRouterResponse(
+        messages,
+        modelId,
+        clientKeys,
+      );
       // Mark as OpenRouter (OpenAI-compatible) for response parsing
       (streamBody as any).__serverType = "openrouter";
     } else if (model === "custom") {
       console.log("[Chat API] -> Using Custom endpoint provider");
-      streamBody = await streamCustomEndpointResponse(messages);
+      streamBody = await streamCustomEndpointResponse(messages, clientKeys);
     } else if (
       model === "atom-large-experimental" ||
       model === "loux-large-experimental" ||
       model === "mistral"
     ) {
       console.log("[Chat API] -> Using Mistral provider for model:", model);
-      streamBody = await streamMistralResponse(messages);
+      streamBody = await streamMistralResponse(messages, clientKeys);
     } else {
       // Default: Local AI (atom) - works with both Ollama and llama.cpp
       console.log(

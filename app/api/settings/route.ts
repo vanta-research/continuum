@@ -9,6 +9,8 @@ interface EnabledModel {
   provider: string;
 }
 
+// Note: API keys are stored client-side only (in localStorage) for security
+// They are never sent to or stored on the server
 interface Settings {
   // Server configuration
   serverUrl: string;
@@ -17,18 +19,8 @@ interface Settings {
   streamResponse: boolean;
   selectedModel: string;
 
-  // HuggingFace token for model downloads
-  hfToken: string;
-
-  // Provider API Keys
-  mistralApiKey: string;
-  openaiApiKey: string;
-  anthropicApiKey: string;
-  openrouterApiKey: string;
-
-  // Custom OpenAI-compatible endpoint
+  // Custom OpenAI-compatible endpoint (non-sensitive config)
   customEndpointUrl: string;
-  customEndpointApiKey: string;
   customEndpointModelId: string;
 
   // User-selected models to show in dropdown
@@ -55,20 +47,14 @@ function loadSettings(): Settings {
     console.error("Error loading settings:", error);
   }
 
-  // Default settings
+  // Default settings (API keys are stored client-side only)
   return {
     serverUrl: process.env.LLAMA_SERVER_URL || "http://localhost:8082",
     temperature: 0.7,
     maxTokens: 2048,
     streamResponse: true,
     selectedModel: "atom",
-    hfToken: "",
-    mistralApiKey: "",
-    openaiApiKey: "",
-    anthropicApiKey: "",
-    openrouterApiKey: "",
     customEndpointUrl: "",
-    customEndpointApiKey: "",
     customEndpointModelId: "",
     enabledModels: [],
   };
@@ -86,27 +72,12 @@ function saveSettings(settings: Partial<Settings>): Settings {
     throw error;
   }
 
-  // Update environment variables for runtime access
+  // Update environment variables for runtime access (non-sensitive settings only)
   if (updated.serverUrl) {
     process.env.LLAMA_SERVER_URL = updated.serverUrl;
   }
-  if (updated.mistralApiKey) {
-    process.env.MISTRAL_API_KEY = updated.mistralApiKey;
-  }
-  if (updated.openaiApiKey) {
-    process.env.OPENAI_API_KEY = updated.openaiApiKey;
-  }
-  if (updated.anthropicApiKey) {
-    process.env.ANTHROPIC_API_KEY = updated.anthropicApiKey;
-  }
-  if (updated.openrouterApiKey) {
-    process.env.OPENROUTER_API_KEY = updated.openrouterApiKey;
-  }
   if (updated.customEndpointUrl) {
     process.env.CUSTOM_ENDPOINT_URL = updated.customEndpointUrl;
-  }
-  if (updated.customEndpointApiKey) {
-    process.env.CUSTOM_ENDPOINT_API_KEY = updated.customEndpointApiKey;
   }
   if (updated.customEndpointModelId) {
     process.env.CUSTOM_ENDPOINT_MODEL_ID = updated.customEndpointModelId;
@@ -118,19 +89,14 @@ function saveSettings(settings: Partial<Settings>): Settings {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // Note: API keys are NOT accepted here - they are stored client-side only
     const {
       serverUrl,
       temperature,
       maxTokens,
       streamResponse,
       selectedModel,
-      hfToken,
-      mistralApiKey,
-      openaiApiKey,
-      anthropicApiKey,
-      openrouterApiKey,
       customEndpointUrl,
-      customEndpointApiKey,
       customEndpointModelId,
       enabledModels,
     } = body;
@@ -141,13 +107,7 @@ export async function POST(request: NextRequest) {
       maxTokens,
       streamResponse,
       selectedModel,
-      hfToken,
-      mistralApiKey,
-      openaiApiKey,
-      anthropicApiKey,
-      openrouterApiKey,
       customEndpointUrl,
-      customEndpointApiKey,
       customEndpointModelId,
       enabledModels,
     });
