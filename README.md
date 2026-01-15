@@ -5,149 +5,143 @@
 <h1 align="center">Continuum</h1>
 
 <p align="center">
-  <strong>The AI-native cognitive workspace.</strong>
+  <strong>A collaborative workspace designed for human-AI thinking.</strong>
 </p>
 
 <p align="center">
-  A workspace where thinking happens—<br/>
-  with artificial intelligence woven into every layer.
+  Real-time co-editing with AI • Multi-provider support • Run models locally • Full privacy control
 </p>
 
 <p align="center">
-  <a href="#the-idea">The Idea</a> •
+  <a href="#get-started">Get Started</a> •
   <a href="#the-loom">The Loom</a> •
-  <a href="#enter-your-workspace">Get Started</a> •
-  <a href="#own-your-mind">Privacy</a>
+  <a href="#why-continuum">Why Continuum</a> •
+  <a href="#privacy-first">Privacy</a>
 </p>
 
 ---
 
-## The Idea
+## What Is This?
 
-We don't need more AI tools. We need better *spaces* for thinking.
+Continuum is a desktop workspace where you and AI write, research, and think together in real-time. 
 
-A cognitive workspace is where intellectual work happens. It's your writer's study, your research lab, your whiteboard at 2am. It's where ideas emerge, collide, and evolve.
+**Think Notion meets Claude, but actually built for collaboration from scratch.**
 
-**Continuum is that space—built from the ground up for human-AI collaboration.**
+- **The Loom** — A real-time collaborative editor where you see AI typing alongside you, with full diff control over every change
+- **Project Spaces** — Separate contexts for different work (research, writing, development) with persistent conversation history
+- **True Multi-Provider** — OpenAI, Anthropic, Mistral, OpenRouter, or run models locally via llama.cpp
+- **Privacy-First** — Run completely offline with local models, or use cloud APIs. Your choice, always.
 
-Most AI products treat intelligence as a feature. A button you click. A sidebar that appears. Continuum treats AI as *environment*. It's not something you use; it's something you think *within*.
+**Use it for:**
+- Technical writing and documentation
+- Research and synthesis
+- Creative writing and ideation
+- Code planning and architecture discussions
+- Personal knowledge management
 
 ---
 
-## What Makes It Different
+## Why Continuum?
 
-### AI-Native, Not AI-Added
+### Real-Time Collaboration, Not Turn-Taking
 
-Other tools bolt AI onto existing paradigms. A chat window here. An "improve writing" button there.
+Watch the AI's cursor move. See thoughts form character by character. Accept, reject, or edit suggestions as they appear. This isn't chat with copy-paste—it's actual co-authoring.
 
-Continuum was designed the other way around: **What would a workspace look like if AI was there from the beginning?**
+Every AI edit shows as a pending diff. You stay in control without breaking flow.
 
-The answer isn't a better chatbot. It's a new kind of space where:
-- Your thinking and AI thinking flow together
-- Ideas develop through dialogue, not commands
-- You stay in control without losing momentum
-- Context persists across sessions, projects, and time
+### Separate Spaces for Different Thinking
 
-### Cognitive Contexts
+Your novel doesn't belong in the same context as your startup research. Continuum gives you distinct project spaces, each with:
+- Its own conversation threads
+- Dedicated file references
+- Persistent context across sessions
+- Independent settings and tone
 
-Your mind doesn't work in one thread. You think about different things in different ways.
+Switch projects and the workspace adapts. Clean mental boundaries.
 
-Continuum gives you **spaces**—not folders, not tags, but distinct cognitive contexts. Your novel lives in one space. Your startup research in another. Your personal journal in a third.
+### Use Any Model—Cloud or Local
 
-Each space maintains its own:
-- Conversation history
-- Reference documents
-- AI context and memory
-- Tone and working style
+**Cloud APIs:**
+- OpenAI (GPT-4o, GPT-4, o1)
+- Anthropic (Claude 3.5 Sonnet, Opus, Haiku)
+- Mistral (Large, Medium, Small)
+- OpenRouter (300+ models)
+- Custom OpenAI-compatible endpoints
 
-Switch between them and feel the shift. Like walking from your studio into your library.
+**Local Models:**
+- Run llama.cpp for complete offline operation
+- Works with any GGUF model (Llama, Mistral, Qwen, etc.)
+- Download models directly from HuggingFace through the UI
+- Zero telemetry, zero data leaving your machine
+
+Configure once, switch between providers instantly. The architecture is model-agnostic.
 
 ---
 
 ## The Loom
 
-<p align="center">
-  <em>Where ideas take form.</em>
-</p>
+The Loom is Continuum's real-time collaborative editor. This is where you work *with* AI, not just prompt it.
 
-The Loom is Continuum's collaborative canvas. It's where you and AI write together—not in turns, but in *flow*.
+**How it works:**
+1. You and the AI share a cursor in the same document
+2. AI edits stream in character-by-character (watch it type)
+3. Every change appears as a reviewable diff
+4. Accept, reject, or manually edit any suggestion
+5. Enable auto-accept for full creative flow mode
 
-**Watch ideas emerge.** The AI's cursor moves in real-time. You see thoughts form, not just appear.
+**Features:**
+- **Native Markdown** with live preview
+- **Drag-and-drop** file imports (images, docs, references)
+- **Export to PDF** with configurable formatting (headers, footers, page numbers)
+- **Version history** via persistent storage
+- **Multiple documents** per project
 
-**Stay in control.** Every AI suggestion appears as a pending change. Full diffs. Accept what resonates, reject what doesn't. Or flip on auto-accept when you're in creative flow and want the AI to keep up.
-
-**Think in drafts.** The Loom isn't for final copy. It's for exploration. For that messy middle stage where ideas are still finding their shape. Refine later. Think now.
-
-**Native Markdown.** Write in Markdown, preview in real-time. Perfect for technical docs, blog posts, notes, fiction—anything where structure and prose intersect.
-
-**Export anywhere.** When you're ready to share, export your work to PDF, Markdown, or plain text. PDF exports include optional headers, footers, page numbers, and timestamps.
-
-**Drag and drop.** Pull files directly from your filesystem into the Loom. Images, documents, references—bring your materials into your thinking space.
-
-The Loom isn't a document editor with AI features. It's a collaboration space that happens to produce documents.
+This isn't a document editor with AI bolted on. It's a shared workspace where both participants can write.
 
 ---
 
-## Dialogue, Not Commands
+## Conversation + Context
 
-The chat in Continuum isn't a command line. It's a thinking partner.
+Chat isn't just for commands—it's for thinking out loud.
 
-- **Explore ideas** before committing them to the Loom
-- **Ask questions** about your own documents
-- **Think out loud** and let the AI reflect back
-- **Branch conversations** into new threads when ideas diverge
+- Explore ideas before committing to the Loom
+- Ask questions about your documents
+- Branch into multiple conversation threads
+- Resume any past discussion with full context
 
-Every conversation is preserved. Every thread can be resumed. Your thinking accumulates.
-
----
-
-## Own Your Mind
-
-Here's the thing about cognitive workspaces: they contain your *thinking*. Your half-formed ideas. Your private drafts. Your intellectual fingerprint.
-
-That shouldn't live on someone else's servers.
-
-**Continuum lets you run AI locally.** Your models. Your machine. Your data never leaves.
-
-- **llama.cpp integration** — Run Llama, Mistral, or any GGUF model locally
-- **Zero telemetry** — We don't track. We don't phone home. We don't peek.
-- **Local storage** — Plain files on your disk. Portable. Yours.
-
-Or connect to cloud APIs when you need more capability. The architecture supports both. The choice is always yours.
-
-### Multi-Provider Support
-
-Connect to the AI providers you already use. Continuum supports them all:
-
-- **OpenAI** — GPT-4o, GPT-4, GPT-3.5 and more
-- **Anthropic** — Claude 3.5 Sonnet, Claude 3 Opus, Haiku
-- **Mistral** — Mistral Large, Medium, Small
-- **OpenRouter** — Access 300+ models through one API
-- **Custom Endpoints** — Any OpenAI-compatible API
-
-**Model Selection:** Choose exactly which models appear in your dropdown. Settings → Model Selection lets you pick from all available models across your configured providers.
-
-**Your mind, your rules.**
+Every project maintains its own conversation history. Switch projects, switch contexts. Your thinking stays organized.
 
 ---
 
-## The Aesthetic
+## Privacy First
 
-A workspace should feel like *yours*.
+Your drafts, ideas, and thinking shouldn't live on someone else's servers by default.
 
-Continuum ships with a carefully crafted **One Dark** theme—easy on the eyes during long sessions, beautiful enough to inspire.
+**Continuum gives you control:**
 
-**Five accent colors** let you make it personal: Blue, Green, Purple, Red, Yellow. Small touch. Surprising difference.
+- **Run completely offline** with llama.cpp (zero data leaves your machine)
+- **Or use cloud APIs** when you need more capability
+- **Zero telemetry** — No tracking, no phone-home, no analytics
+- **Local-first storage** — All data stored as plain files on your disk
 
-**Native desktop app** via Electron. Not a browser tab. Not a web app pretending to be software. A real application that lives in your dock.
+**For local AI:**
+1. Install llama.cpp
+2. Download any GGUF model (built-in HuggingFace browser in settings)
+3. Point Continuum at your local server
+4. Work offline with complete privacy
 
-Details matter. The space you think in shapes the thoughts you have.
+**For cloud APIs:**
+- API keys stored locally, encrypted
+- Configurable per-project
+- Switch providers anytime
+
+The architecture is built to support both. You decide where your data goes.
 
 ---
 
-## Enter Your Workspace
+## Get Started
 
-### Quick Start
+### Quick Start (Web)
 
 ```bash
 git clone https://github.com/vanta-research/continuum.git
@@ -156,7 +150,7 @@ npm install
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). You're in.
+Open [localhost:3000](http://localhost:3000).
 
 ### Desktop App
 
@@ -164,52 +158,52 @@ Open [localhost:3000](http://localhost:3000). You're in.
 npm run electron:dev
 ```
 
-### Local AI (Optional)
+The desktop app is a native Electron application (not a browser tab). Ships with **One Dark** theme and five accent colors (Blue, Green, Purple, Red, Yellow).
 
-For absolute security:
+### Setting Up Local AI (Optional)
 
-1. **Set up llama.cpp**
-   ```bash
-   git clone https://github.com/ggerganov/llama.cpp
-   cd llama.cpp
-   make
-   ```
+For complete offline operation:
 
-2. **Download a model** — [Atom-Olmo3-7B](https://huggingface.co/mradermacher/atom-olmo3-7b-GGUF) is a great start
+**1. Install llama.cpp**
+```bash
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+make
+```
 
-3. **Run the server**
-   ```bash
-   ./llama-server --model your-model.gguf --port 8082 --ctx-size 4096
-   ```
+**2. Run a model server**
+```bash
+./llama-server --model path/to/model.gguf --port 8082 --ctx-size 4096
+```
 
-4. **Configure** — Settings → Model → "Atom Local"
+Recommended starter model: [Atom-Olmo3-7B](https://huggingface.co/mradermacher/atom-olmo3-7b-GGUF)
 
-Your AI. Your hardware. Your thoughts.
+**3. Configure Continuum**
+- Settings → API Keys → Add llama.cpp endpoint
+- Or set `LLAMA_SERVER_URL=http://localhost:8082` in `.env.local`
+
+You can also download models directly through Continuum's UI (Settings → Download Models).
 
 ---
 
 ## Configuration
 
-### Environment
+### Environment Variables
 
-Create `.env.local`:
+Optional `.env.local`:
 ```env
 LLAMA_SERVER_URL=http://localhost:8082
 ```
 
-Optional web search (`.env.search`):
-```env
-GOOGLE_API_KEY=your_key
-GOOGLE_SEARCH_ENGINE_ID=your_engine_id
-```
+### In-App Settings
 
-### In-App
+Access via Settings menu:
 
-Everything else lives in Settings:
-- **General Settings** — Model selection, temperature, token limits, accent color
-- **Model Selection** — Choose which models from each provider appear in your dropdown
-- **Download Models** — Browse and download GGUF models from HuggingFace for local use
-- **API Keys** — Configure keys for OpenAI, Anthropic, Mistral, OpenRouter (stored locally)
+- **API Keys** — Configure OpenAI, Anthropic, Mistral, OpenRouter (stored locally, encrypted)
+- **Model Selection** — Choose which models appear in your dropdown across all providers
+- **Download Models** — Browse and download GGUF models from HuggingFace
+- **General** — Temperature, max tokens, accent color
+- **Project Settings** — Per-project model and provider configuration
 
 ---
 
@@ -314,19 +308,22 @@ GET   /api/models/openrouter                # List OpenRouter models
 
 ---
 
-## The Future
+## Roadmap
 
-Continuum is the beginning.
+**Shipped:**
+- [x] Real-time collaborative editing (The Loom)
+- [x] Multi-provider support (OpenAI, Anthropic, Mistral, OpenRouter)
+- [x] Local model support (llama.cpp integration)
+- [x] PDF export with formatting options
+- [x] Model selection and download UI
 
-- [x] **Multi-provider support** — OpenAI, Anthropic, Mistral, OpenRouter
-- [x] **PDF Export** — Share your work with configurable formatting
-- [x] **Model Selection** — Curate your own model dropdown
-- [ ] **Voice** — Think out loud, literally
-- [ ] **Plugins** — Extend the workspace with custom tools
-- [ ] **Multiplayer** — Collaborative cognitive spaces
-- [ ] **Mobile** — Your workspace, everywhere
-
-The goal isn't to build features. It's to build the best possible space for human-AI thinking.
+**In Development:**
+- [ ] Voice input/output
+- [ ] Plugin system for extensibility
+- [ ] Collaborative multiplayer spaces
+- [ ] Mobile apps (iOS/Android)
+- [ ] Web clipper for research
+- [ ] Enhanced RAG for long documents
 
 ---
 
@@ -334,25 +331,23 @@ The goal isn't to build features. It's to build the best possible space for huma
 
 Built by [VANTA Research](https://github.com/vanta-research).
 
-We welcome collaborators who share the vision. Fork, branch, PR.
+Contributions welcome. Fork, branch, PR.
+
+**Development:**
+- Report bugs via [Issues](https://github.com/vanta-research/continuum/issues)
+- Discuss features in [Discussions](https://github.com/vanta-research/continuum/discussions)
+- See architecture details in the [Tech Stack](#under-the-hood) section
 
 ---
 
 ## License
 
-MIT — Use it. Modify it. Make it yours.
+MIT License — Use it, modify it, ship it.
 
 ---
 
-## Usage Notices
-
 <p align="center">
-  <em>"The tools we use shape the thoughts we think."</em>
-</p>
-
-<p align="center">
-  <strong>Continuum is the space where your mind meets AI.</strong><br/>
-  Not to replace your thinking. To expand it.
+  <strong>Continuum is a space for thinking with AI, not just prompting it.</strong>
 </p>
 
 <p align="center">
