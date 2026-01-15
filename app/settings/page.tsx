@@ -355,11 +355,34 @@ function SettingsContent() {
 
   const selectedProvider = PROVIDERS.find((p) => p.id === selectedModel);
 
+  // Get the API key for a provider from current state
+  const getApiKeyForProvider = (providerId: string): string => {
+    switch (providerId) {
+      case "openai":
+        return openaiApiKey;
+      case "anthropic":
+        return anthropicApiKey;
+      case "mistral":
+        return mistralApiKey;
+      case "openrouter":
+        return openrouterApiKey;
+      default:
+        return "";
+    }
+  };
+
   // Fetch available models for a provider
   const fetchModelsForProvider = async (providerId: string) => {
     setLoadingModels((prev) => ({ ...prev, [providerId]: true }));
     try {
-      const response = await fetch(`/api/models/${providerId}`);
+      const apiKey = getApiKeyForProvider(providerId);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (apiKey) {
+        headers["x-api-key"] = apiKey;
+      }
+      const response = await fetch(`/api/models/${providerId}`, { headers });
       const data = await response.json();
       if (data.success && data.models) {
         setAvailableModels((prev) => ({ ...prev, [providerId]: data.models }));
@@ -896,8 +919,8 @@ function SettingsContent() {
                 <div className="p-6">
                   <h2 className="mb-4 text-lg font-semibold">About</h2>
                   <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>Continuum - AI for humans by VANTA Research</p>
-                    <p>Designed for clean, professional AI interactions.</p>
+                    <p>Continuum by VANTA Research</p>
+                    <p className="italic">indistinguishable from thought.</p>
                     <p className="mt-4">Version: 0.1.0</p>
                     <p className="mt-4 text-xs">
                       Icons by{" "}

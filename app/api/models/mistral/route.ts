@@ -1,32 +1,10 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import fs from "fs";
 
-interface Settings {
-  mistralApiKey?: string;
-}
-
-function loadSettings(): Settings {
+export async function GET(request: Request) {
   try {
-    const settingsPath = path.join(process.cwd(), "data", "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const data = fs.readFileSync(settingsPath, "utf-8");
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error("Error loading settings:", error);
-  }
-  return {};
-}
-
-function getMistralApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.mistralApiKey || process.env.MISTRAL_API_KEY;
-}
-
-export async function GET() {
-  try {
-    const apiKey = getMistralApiKey();
+    // Get API key from request header (client passes it from localStorage)
+    const apiKey =
+      request.headers.get("x-api-key") || process.env.MISTRAL_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json({

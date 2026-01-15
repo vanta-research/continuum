@@ -1635,28 +1635,6 @@ function ChatInterfaceInner() {
                 </Select>
               )}
             </div>
-            <div className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Web Search
-                </label>
-                <span className="relative">
-                  <span className="text-xs text-yellow-400 cursor-help">ⓘ</span>
-                  <span className="absolute -left-20 bottom-6 w-60 p-2 bg-background border border-border/50 rounded-md text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                    Enable real-time web search.
-                    <span className="font-semibold">
-                      Configure Google API
-                    </span>{" "}
-                    in .env.search for real results.
-                  </span>
-                </span>
-              </div>
-              <Switch
-                checked={webSearchEnabled}
-                onCheckedChange={setWebSearchEnabled}
-                className="data-[state=checked]:bg-primary"
-              />
-            </div>
             <Button
               variant="ghost"
               className="w-full justify-start gap-2"

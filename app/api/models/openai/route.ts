@@ -1,32 +1,10 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import fs from "fs";
 
-interface Settings {
-  openaiApiKey?: string;
-}
-
-function loadSettings(): Settings {
+export async function GET(request: Request) {
   try {
-    const settingsPath = path.join(process.cwd(), "data", "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const data = fs.readFileSync(settingsPath, "utf-8");
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error("Error loading settings:", error);
-  }
-  return {};
-}
-
-function getOpenAIApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.openaiApiKey || process.env.OPENAI_API_KEY;
-}
-
-export async function GET() {
-  try {
-    const apiKey = getOpenAIApiKey();
+    // Get API key from request header (client passes it from localStorage)
+    const apiKey =
+      request.headers.get("x-api-key") || process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json({
@@ -45,7 +23,7 @@ export async function GET() {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        errorData.error?.message || `OpenAI API error: ${response.status}`
+        errorData.error?.message || `OpenAI API error: ${response.status}`,
       );
     }
 
@@ -81,7 +59,10 @@ export async function GET() {
     return NextResponse.json({
       success: false,
       models: [],
-      error: error instanceof Error ? error.message : "Failed to fetch OpenAI models",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch OpenAI models",
     });
   }
 }

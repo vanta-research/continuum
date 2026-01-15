@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import fs from "fs";
 
 interface OpenRouterModel {
   id: string;
@@ -18,31 +16,11 @@ interface OpenRouterModel {
   };
 }
 
-interface Settings {
-  openrouterApiKey?: string;
-}
-
-function loadSettings(): Settings {
-  try {
-    const settingsPath = path.join(process.cwd(), "data", "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const data = fs.readFileSync(settingsPath, "utf-8");
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error("Error loading settings:", error);
-  }
-  return {};
-}
-
-function getOpenRouterApiKey(): string | undefined {
-  const settings = loadSettings();
-  return settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-}
-
 export async function GET(request: Request) {
   try {
-    const apiKey = getOpenRouterApiKey();
+    // Get API key from request header (client passes it from localStorage)
+    const apiKey =
+      request.headers.get("x-api-key") || process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
