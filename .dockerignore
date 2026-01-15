@@ -1,0 +1,105 @@
+# ===========================================
+# SENSITIVE DATA - NEVER INCLUDE IN IMAGE
+# ===========================================
+
+# User data directory (contains API keys, tokens, user projects)
+data/
+data/**
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.local.example
+
+# OAuth state files
+**/oauth-state.json
+
+# ===========================================
+# DEVELOPMENT & BUILD ARTIFACTS
+# ===========================================
+
+# Dependencies (will be installed fresh in container)
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+
+# Next.js build output (will be built fresh in container)
+.next/
+out/
+build/
+
+# Electron (not needed for web deployment)
+electron/
+dist/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+
+# ===========================================
+# IDE & TOOLING
+# ===========================================
+
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ===========================================
+# GIT & VERSION CONTROL
+# ===========================================
+
+.git/
+.gitignore
+
+# ===========================================
+# DOCUMENTATION & NON-ESSENTIAL FILES
+# ===========================================
+
+*.md
+!README.md
+LICENSE
+CHANGELOG*
+
+# ===========================================
+# LOGS & DEBUG FILES
+# ===========================================
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ===========================================
+# TESTING & COVERAGE
+# ===========================================
+
+coverage/
+.nyc_output/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+
+# ===========================================
+# MISC UNWANTED FILES
+# ===========================================
+
+# Downloaded packages that shouldn't be in repo
+*.deb
+cuda-keyring*
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Vercel
+.vercel/
+
+# Thumbnails
+thumbs.db
+Thumbs.db
