@@ -635,9 +635,31 @@ function ChatInterfaceInner() {
 
       // Helper to clean all tool markers from text for display
       const cleanAllToolMarkers = (text: string): string => {
+        console.log(
+          "[cleanAllToolMarkers] Input has ADD_FILE?:",
+          text.includes("[ADD_FILE]"),
+        );
+        console.log("[cleanAllToolMarkers] Input length:", text.length);
+
         let cleaned = cleanLoomMarkers(text);
+        console.log(
+          "[cleanAllToolMarkers] After cleanLoomMarkers, has ADD_FILE?:",
+          cleaned.includes("[ADD_FILE]"),
+        );
+
         cleaned = cleanProjectToolMarkers(cleaned);
+        console.log(
+          "[cleanAllToolMarkers] After cleanProjectToolMarkers, has ADD_FILE?:",
+          cleaned.includes("[ADD_FILE]"),
+        );
+
         cleaned = cleanAddFileMarkers(cleaned);
+        console.log(
+          "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
+          cleaned.includes("[ADD_FILE]"),
+        );
+        console.log("[cleanAllToolMarkers] Final length:", cleaned.length);
+
         return cleaned;
       };
 
@@ -1023,6 +1045,18 @@ function ChatInterfaceInner() {
 
               // Final cleanup of chat message (handles both ADD_FILE and CANVAS_EDIT)
               const cleanedMessage = cleanAllToolMarkers(fullResponse);
+              console.log(
+                "[Loom Debug] cleanedMessage length:",
+                cleanedMessage.length,
+              );
+              console.log(
+                "[Loom Debug] cleanedMessage preview:",
+                cleanedMessage.substring(0, 300),
+              );
+              console.log(
+                "[Loom Debug] cleanedMessage still has ADD_FILE?:",
+                cleanedMessage.includes("[ADD_FILE]"),
+              );
 
               // Compute just the added lines for display
               const diff = computeDiff(currentDocContent, editContent);
@@ -1031,7 +1065,14 @@ function ChatInterfaceInner() {
                 .map((line) => line.content)
                 .join("\n");
 
+              console.log(
+                "[Loom Debug] About to update session with cleanedMessage",
+              );
               setSessions((prevSessions) => {
+                console.log(
+                  "[Loom Debug] Inside setSessions callback, cleanedMessage:",
+                  cleanedMessage.substring(0, 100),
+                );
                 return prevSessions.map((s) =>
                   s.id === currentSessionId
                     ? {
@@ -1051,6 +1092,9 @@ function ChatInterfaceInner() {
                     : s,
                 );
               });
+              console.log(
+                "[Loom Debug] setSessions called for auto-accept path",
+              );
             } else {
               // Queue the edit for review (new diff-based workflow)
               console.log(
