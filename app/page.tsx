@@ -667,9 +667,16 @@ function ChatInterfaceInner() {
         throw new Error("No response body");
       }
 
+      console.log(
+        "🚀 [DEBUG] Starting stream processing - if you see this, client code is running!",
+      );
+
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log("🏁 [DEBUG] Stream complete!");
+          break;
+        }
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
