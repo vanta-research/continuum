@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   FileText,
   X,
@@ -16,6 +16,11 @@ import {
   FolderOpen,
   FolderX,
   Undo2,
+  Save,
+  FolderPlus,
+  Folder,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -37,7 +42,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useLoom } from "./loom-provider";
+import { useProject } from "@/components/projects/project-provider";
 import { cn } from "@/lib/utils";
+import type { FileTreeNode } from "@/lib/project-types";
 import {
   exportAsMarkdown,
   exportAsPlainText,
@@ -165,6 +172,185 @@ export function LoomToolbar({
     showDate: true,
   });
 
+  // Save As dialog state
+  const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
+  const [saveAsFilename, setSaveAsFilename] = useState("");
+  const [selectedFolderPath, setSelectedFolderPath] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Get project context for saving
+  const { state: projectState, refreshActiveProject } = useProject();
+  const projectId = projectState.activeProjectId;
+
+  // Fetch file tree when Save As dialog opens
+  const fetchFileTree = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const response = await fetch(`/api/projects/${projectId}/files`);
+      if (response.ok) {
+        const data = await response.json();
+        setFileTree(data.tree || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch file tree:", error);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (showSaveAsDialog) {
+      fetchFileTree();
+      // Pre-fill filename from document title
+      const title = document?.title || "Untitled";
+      const filename = title.endsWith(".md") ? title : `${title}.md`;
+      setSaveAsFilename(filename);
+      setSelectedFolderPath("");
+      setIsCreatingFolder(false);
+      setNewFolderName("");
+    }
+  }, [showSaveAsDialog, document?.title, fetchFileTree]);
+
+  const toggleFolderExpanded = (path: string) => {
+    setExpandedFolders((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(path)) {
+        newSet.delete(path);
+      } else {
+        newSet.add(path);
+      }
+      return newSet;
+    });
+  };
+
+  const handleCreateNewFolder = async () => {
+    if (!newFolderName.trim() || !projectId) return;
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/folders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+          parentPath: selectedFolderPath,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFileTree(data.tree || []);
+        // Select the newly created folder
+        const newPath = selectedFolderPath
+          ? `${selectedFolderPath}/${newFolderName.trim()}`
+          : newFolderName.trim();
+        setSelectedFolderPath(newPath);
+        setExpandedFolders((prev) => new Set([...prev, newPath]));
+        setNewFolderName("");
+        setIsCreatingFolder(false);
+        refreshActiveProject();
+      }
+    } catch (error) {
+      console.error("Failed to create folder:", error);
+    }
+  };
+
+  const handleSaveAs = async () => {
+    if (!saveAsFilename.trim() || !projectId || !document) return;
+
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      // Create a file blob from the document content
+      const blob = new Blob([document.content], { type: "text/markdown" });
+      const filename = saveAsFilename.trim().endsWith(".md")
+        ? saveAsFilename.trim()
+        : `${saveAsFilename.trim()}.md`;
+      const file = new File([blob], filename, { type: "text/markdown" });
+
+      formData.append("file", file);
+      if (selectedFolderPath) {
+        formData.append("folderPath", selectedFolderPath);
+      }
+
+      const response = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setShowSaveAsDialog(false);
+        refreshActiveProject();
+        // Update document title to match the saved filename
+        const savedName = filename.replace(/\.md$/, "");
+        updateDocumentTitle(savedName);
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to save file");
+      }
+    } catch (error) {
+      console.error("Failed to save file:", error);
+      alert("Failed to save file");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Render folder tree for selection
+  const renderFolderTree = (
+    nodes: FileTreeNode[],
+    depth: number = 0,
+  ): React.ReactNode => {
+    return nodes
+      .filter((node) => node.type === "folder")
+      .map((node) => {
+        const isSelected = selectedFolderPath === node.path;
+        const isExpanded = expandedFolders.has(node.path);
+        const hasChildren = node.children?.some(
+          (child) => child.type === "folder",
+        );
+
+        return (
+          <div key={node.path}>
+            <div
+              className={cn(
+                "flex items-center gap-1 py-1.5 px-2 cursor-pointer rounded-md transition-colors",
+                isSelected ? "bg-primary/20 text-primary" : "hover:bg-muted",
+              )}
+              style={{ paddingLeft: `${8 + depth * 16}px` }}
+              onClick={() => setSelectedFolderPath(node.path)}
+            >
+              {hasChildren ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFolderExpanded(node.path);
+                  }}
+                  className="p-0.5 hover:bg-white/10 rounded"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                </button>
+              ) : (
+                <span className="w-4" />
+              )}
+              <Folder className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+              <span className="text-sm truncate">{node.name}</span>
+            </div>
+            {isExpanded && node.children && (
+              <div>{renderFolderTree(node.children, depth + 1)}</div>
+            )}
+          </div>
+        );
+      });
+  };
+
   const handleExportPdf = useCallback(async () => {
     if (document) {
       try {
@@ -263,6 +449,20 @@ export function LoomToolbar({
                 </span>
               </span>
             </div>
+          )}
+
+          {/* Save As button */}
+          {document && projectId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5"
+              onClick={() => setShowSaveAsDialog(true)}
+              title="Save document to a folder"
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span className="text-xs">Save As</span>
+            </Button>
           )}
 
           {/* Export dropdown */}
@@ -448,6 +648,133 @@ export function LoomToolbar({
               Cancel
             </Button>
             <Button onClick={handleExportPdf}>Export PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save As Dialog */}
+      <Dialog open={showSaveAsDialog} onOpenChange={setShowSaveAsDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save Document As</DialogTitle>
+            <DialogDescription>
+              Save your document to a folder in your project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Filename input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Filename</label>
+              <Input
+                value={saveAsFilename}
+                onChange={(e) => setSaveAsFilename(e.target.value)}
+                placeholder="document.md"
+                className="h-9"
+              />
+            </div>
+
+            {/* Folder selection */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Save to folder</label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 gap-1"
+                  onClick={() => setIsCreatingFolder(!isCreatingFolder)}
+                >
+                  <FolderPlus className="h-3 w-3" />
+                  <span className="text-xs">New Folder</span>
+                </Button>
+              </div>
+
+              {/* New folder creation */}
+              {isCreatingFolder && (
+                <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="Folder name"
+                    className="h-8 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreateNewFolder();
+                      if (e.key === "Escape") {
+                        setIsCreatingFolder(false);
+                        setNewFolderName("");
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={handleCreateNewFolder}
+                    disabled={!newFolderName.trim()}
+                  >
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => {
+                      setIsCreatingFolder(false);
+                      setNewFolderName("");
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Folder tree */}
+              <div className="border border-border rounded-md max-h-48 overflow-y-auto">
+                {/* Root option */}
+                <div
+                  className={cn(
+                    "flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded-md transition-colors",
+                    selectedFolderPath === ""
+                      ? "bg-primary/20 text-primary"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() => setSelectedFolderPath("")}
+                >
+                  <FolderOpen className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                  <span className="text-sm">Root (no folder)</span>
+                </div>
+
+                {/* Folder list */}
+                {fileTree.length > 0 ? (
+                  renderFolderTree(fileTree)
+                ) : (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    No folders yet. Create one to organize your documents.
+                  </div>
+                )}
+              </div>
+
+              {selectedFolderPath && (
+                <p className="text-xs text-muted-foreground">
+                  Will save to:{" "}
+                  <span className="font-medium">{selectedFolderPath}/</span>
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSaveAsDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveAs}
+              disabled={!saveAsFilename.trim() || isSaving}
+            >
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

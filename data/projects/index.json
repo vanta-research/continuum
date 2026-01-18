@@ -1,9 +1,14 @@
 {
   "projects": [
     {
+      "id": "proj_975ff112",
+      "name": "Test Project",
+      "updatedAt": 1768706896668
+    },
+    {
       "id": "proj_07628fed",
       "name": "My Second Project",
-      "updatedAt": 1768460499405
+      "updatedAt": 1768705695152
     },
     {
       "id": "proj_5a68c081",
@@ -11,5 +16,5 @@
       "updatedAt": 1768444724742
     }
   ],
-  "activeProjectId": "proj_07628fed"
+  "activeProjectId": "proj_975ff112"
 }
