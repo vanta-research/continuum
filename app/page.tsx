@@ -70,6 +70,7 @@ import {
 } from "@/components/projects/project-provider";
 import { ProjectSwitcher } from "@/components/projects/project-switcher";
 import { loadClientKeys } from "@/lib/client-keys";
+import { useLocalServer } from "@/components/local-server-provider";
 import type {
   StoredSession,
   StoredMessage,
@@ -313,8 +314,15 @@ function ChatInterfaceInner() {
   const [loadingEnabledModels, setLoadingEnabledModels] = useState(true); // Start true to prevent flash
   const [defaultModel, setDefaultModel] = useState(""); // User's preferred default model
 
-  // Check if user has configured any models
-  const hasConfiguredModels = enabledModels.length > 0;
+  // Local server / llama.cpp state
+  const localServer = useLocalServer();
+  const [llamacppModels, setLlamacppModels] = useState<
+    Array<{ id: string; name: string; provider: string }>
+  >([]);
+  const [loadingLlamacppModels, setLoadingLlamacppModels] = useState(false);
+
+  // Check if user has configured any models (including llama.cpp models when server is running)
+  const hasConfiguredModels = enabledModels.length > 0 || llamacppModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -429,6 +437,52 @@ function ChatInterfaceInner() {
   useEffect(() => {
     fetchEnabledModels();
   }, [fetchEnabledModels]);
+
+  // Fetch llama.cpp models when server becomes active
+  const fetchLlamacppModels = useCallback(async () => {
+    setLoadingLlamacppModels(true);
+    try {
+      const response = await fetch("/api/models/llamacpp");
+      const data = await response.json();
+
+      if (data.success && data.models) {
+        setLlamacppModels(data.models);
+
+        // If no model is currently selected and llama.cpp has models, auto-select the first one
+        if (!selectedModel && data.models.length > 0) {
+          setSelectedModel(`llamacpp:${data.models[0].id}`);
+        }
+      } else {
+        setLlamacppModels([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch llama.cpp models:", error);
+      setLlamacppModels([]);
+    } finally {
+      setLoadingLlamacppModels(false);
+    }
+  }, [selectedModel]);
+
+  // Watch for llama.cpp server status changes
+  useEffect(() => {
+    if (localServer.status.status === "running") {
+      // Server is running, fetch available models
+      fetchLlamacppModels();
+    } else {
+      // Server stopped, clear llama.cpp models
+      setLlamacppModels([]);
+
+      // If the selected model was a llama.cpp model, clear it or select another
+      if (selectedModel.startsWith("llamacpp:")) {
+        if (enabledModels.length > 0) {
+          const firstModel = enabledModels[0];
+          setSelectedModel(`${firstModel.provider}:${firstModel.id}`);
+        } else {
+          setSelectedModel("");
+        }
+      }
+    }
+  }, [localServer.status.status, fetchLlamacppModels, selectedModel, enabledModels]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
@@ -1747,9 +1801,46 @@ function ChatInterfaceInner() {
                     </SelectTrigger>
                     <SelectContent>
                       {/* Loading state */}
-                      {loadingEnabledModels && (
+                      {(loadingEnabledModels || loadingLlamacppModels) && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">
                           Loading models...
+                        </div>
+                      )}
+
+                      {/* llama.cpp Local AI models (shown when server is running) */}
+                      {llamacppModels.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                            Local AI (llama.cpp)
+                          </div>
+                          {llamacppModels.map((model) => {
+                            const modelValue = `llamacpp:${model.id}`;
+                            const isDefault = modelValue === defaultModel;
+                            return (
+                              <SelectItem key={`llamacpp-${model.id}`} value={modelValue}>
+                                <div className="flex items-center gap-2">
+                                  {isDefault && (
+                                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                  )}
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                    local
+                                  </span>
+                                  <span>{model.name}</span>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                          {enabledModels.length > 0 && (
+                            <div className="my-1 border-t border-border/50" />
+                          )}
+                        </>
+                      )}
+
+                      {/* Cloud provider section header (only show if we have both local and cloud models) */}
+                      {llamacppModels.length > 0 && enabledModels.length > 0 && (
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                          Cloud Providers
                         </div>
                       )}
 

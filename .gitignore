@@ -42,7 +42,7 @@ yarn-error.log*
 
 # user data (keep structure, ignore content)
 /data/memory/*.json
-/data/projects/proj_*
+/data/projects/*
 
 # vercel
 .vercel

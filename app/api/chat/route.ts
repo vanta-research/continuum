@@ -1049,10 +1049,15 @@ export async function POST(request: NextRequest) {
     // Route to the appropriate provider
     console.log("[Chat API] Routing model:", model);
 
-    if (model === "openai") {
+    // Parse provider prefix from model string (format: "provider:modelId")
+    const [provider, modelId] = model.includes(":") 
+      ? [model.split(":")[0], model.split(":").slice(1).join(":")]
+      : [model, undefined];
+
+    if (provider === "openai" || model === "openai") {
       console.log("[Chat API] -> Using OpenAI provider");
       streamBody = await streamOpenAIResponse(messages, clientKeys);
-    } else if (model === "anthropic") {
+    } else if (provider === "anthropic" || model === "anthropic") {
       // Anthropic needs system prompt passed separately
       streamBody = await streamAnthropicResponse(
         messages,
@@ -1070,9 +1075,8 @@ export async function POST(request: NextRequest) {
       );
       // Mark as OpenRouter (OpenAI-compatible) for response parsing
       (streamBody as any).__serverType = "openrouter";
-    } else if (model.startsWith("openrouter:")) {
+    } else if (provider === "openrouter") {
       // Handle specific OpenRouter models
-      const modelId = model.replace("openrouter:", "");
       console.log(
         "[Chat API] -> Using OpenRouter provider with model:",
         modelId,
@@ -1088,12 +1092,18 @@ export async function POST(request: NextRequest) {
       console.log("[Chat API] -> Using Custom endpoint provider");
       streamBody = await streamCustomEndpointResponse(messages, clientKeys);
     } else if (
+      provider === "mistral" ||
       model === "atom-large-experimental" ||
       model === "loux-large-experimental" ||
       model === "mistral"
     ) {
       console.log("[Chat API] -> Using Mistral provider for model:", model);
       streamBody = await streamMistralResponse(messages, clientKeys);
+    } else if (provider === "llamacpp") {
+      // Explicit llama.cpp model selection - bypass auto-detection
+      console.log("[Chat API] -> Using llama.cpp server for model:", modelId || model);
+      streamBody = await streamLlamaResponse(messages);
+      (streamBody as any).__serverType = "llamacpp";
     } else {
       // Default: Local AI (atom) - works with both Ollama and llama.cpp
       console.log(
