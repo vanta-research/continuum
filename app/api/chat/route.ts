@@ -26,6 +26,7 @@ const OPENROUTER_MODEL_ID =
 interface AppSettings {
   customEndpointUrl?: string;
   customEndpointModelId?: string;
+  customSystemPrompt?: string;
 }
 
 // Client-provided API keys interface (passed in request body)
@@ -998,12 +999,14 @@ export async function POST(request: NextRequest) {
 
     let streamBody: ReadableStream | null = null;
 
-    let systemPrompt = atomSystemPrompt;
-    if (model === "loux-large-experimental") {
-      systemPrompt = louxSystemPrompt;
-    }
+    // Load user's custom system prompt from settings
+    const appSettings = loadSettings();
+    
+    // Start with the user's custom instructions (if any), otherwise empty
+    // The built-in "Atom" and "Loux" personas are no longer forced on users
+    let systemPrompt = appSettings.customSystemPrompt || "";
 
-    // Add loom instructions FIRST if loom mode is enabled (takes priority over ADD_FILE)
+    // Add loom instructions if loom mode is enabled (these are functional instructions, not personality)
     // When Loom is active, we DON'T include ADD_FILE instructions to avoid confusion
     if (loomEnabled && loomContext) {
       systemPrompt += buildLoomInstructions(loomContext);

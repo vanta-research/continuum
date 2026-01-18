@@ -160,6 +160,9 @@ function SettingsContent() {
   const [customEndpointUrl, setCustomEndpointUrl] = useState("");
   const [customEndpointModelId, setCustomEndpointModelId] = useState("");
 
+  // Custom system prompt (user-defined instructions)
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
+
   // Load API keys from localStorage on mount
   useEffect(() => {
     const keys = loadClientKeys();
@@ -231,6 +234,8 @@ function SettingsContent() {
               setCustomEndpointModelId(data.settings.customEndpointModelId);
             if (data.settings.enabledModels)
               setEnabledModels(data.settings.enabledModels);
+            if (data.settings.customSystemPrompt !== undefined)
+              setCustomSystemPrompt(data.settings.customSystemPrompt);
           }
         }
       } catch (error) {
@@ -267,6 +272,7 @@ function SettingsContent() {
           customEndpointUrl,
           customEndpointModelId,
           enabledModels,
+          customSystemPrompt,
           // Don't send API keys to server
         }),
       });
@@ -766,6 +772,29 @@ function SettingsContent() {
                       />
                     </div>
                   </div>
+                </div>
+              </Card>
+
+              {/* Custom Instructions Card */}
+              <Card className="glass-strong">
+                <div className="p-6 space-y-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold">Custom Instructions</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Add custom instructions that will be included at the beginning of every conversation.
+                      Leave empty for no custom instructions.
+                    </p>
+                  </div>
+                  <textarea
+                    value={customSystemPrompt}
+                    onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                    placeholder="e.g., Always respond concisely. Use bullet points when listing items. Prefer practical examples over theory..."
+                    className="w-full min-h-[120px] p-3 text-sm rounded-md border border-border bg-background/50 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    These instructions help personalize AI responses to your preferences.
+                    The AI will still have access to its core capabilities like the Loom editor.
+                  </p>
                 </div>
               </Card>
 

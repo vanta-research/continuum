@@ -28,6 +28,9 @@ interface Settings {
 
   // Default model for chat (format: "provider:model-id")
   defaultModel: string;
+
+  // Custom system prompt (user-defined instructions)
+  customSystemPrompt: string;
 }
 
 const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
@@ -61,6 +64,7 @@ function loadSettings(): Settings {
     customEndpointModelId: "",
     enabledModels: [],
     defaultModel: "",
+    customSystemPrompt: "",
   };
 }
 
@@ -104,6 +108,7 @@ export async function POST(request: NextRequest) {
       customEndpointModelId,
       enabledModels,
       defaultModel,
+      customSystemPrompt,
     } = body;
 
     const settings = saveSettings({
@@ -116,6 +121,7 @@ export async function POST(request: NextRequest) {
       customEndpointModelId,
       enabledModels,
       defaultModel,
+      customSystemPrompt,
     });
 
     return NextResponse.json({
