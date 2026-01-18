@@ -5,9 +5,9 @@
   "description": "Continuum - AI for humans by VANTA Research",
   "author": {
     "name": "VANTA Research",
-    "email": "info@vantaresearch.com"
+    "email": "hello@vantaresearch.xyz"
   },
-  "homepage": "https://vantaresearch.com",
+  "homepage": "https://vantaresearch.xyz",
   "main": "electron/main.js",
   "private": true,
   "scripts": {
@@ -84,7 +84,14 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "synopsis": "AI assistant powered by local and cloud models",
+      "maintainer": "VANTA Research <hello@vantaresearch.xyz>",
+      "executableName": "continuum"
+    },
+    "deb": {
+      "priority": "optional",
+      "compression": "xz"
     }
   },
   "dependencies": {
