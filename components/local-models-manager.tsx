@@ -131,7 +131,9 @@ export default function LocalModelsManager() {
     setIsDetectingBinary(false);
 
     if (!path) {
-      setError("llama-server not found. Please install llama.cpp or set the path manually.");
+      setError(
+        "llama-server not found. Please install llama.cpp or set the path manually.",
+      );
     }
   };
 
@@ -178,7 +180,11 @@ export default function LocalModelsManager() {
     const statusConfig = {
       stopped: { color: "bg-muted-foreground", text: "Stopped", pulse: false },
       starting: { color: "bg-yellow-500", text: "Starting...", pulse: true },
-      running: { color: "bg-green-500", text: `Running on port ${status.port}`, pulse: false },
+      running: {
+        color: "bg-green-500",
+        text: `Running on port ${status.port}`,
+        pulse: false,
+      },
       error: { color: "bg-destructive", text: "Error", pulse: false },
     };
 
@@ -186,8 +192,16 @@ export default function LocalModelsManager() {
 
     return (
       <div className="flex items-center gap-2">
-        <div className={`w-3 h-3 rounded-full ${config.color} ${config.pulse ? "animate-pulse" : ""}`} />
-        <span className={status.status === "error" ? "text-destructive" : "text-muted-foreground"}>
+        <div
+          className={`w-3 h-3 rounded-full ${config.color} ${config.pulse ? "animate-pulse" : ""}`}
+        />
+        <span
+          className={
+            status.status === "error"
+              ? "text-destructive"
+              : "text-muted-foreground"
+          }
+        >
           {config.text}
         </span>
       </div>
@@ -203,7 +217,8 @@ export default function LocalModelsManager() {
           <div>
             <h3 className="font-semibold text-lg">Local Server Management</h3>
             <p className="text-sm text-muted-foreground mt-2">
-              This feature is only available when running in the Electron desktop app.
+              This feature is only available when running in the Electron
+              desktop app.
             </p>
             <p className="text-sm text-muted-foreground mt-2">
               To use local models, start llama-server manually:
@@ -234,8 +249,12 @@ export default function LocalModelsManager() {
           {status.status === "running" && status.modelName && (
             <div className="flex items-center justify-between bg-green-500/10 border border-green-500/20 rounded-lg p-3">
               <div>
-                <p className="text-sm font-medium text-green-500">Model Running</p>
-                <p className="text-xs text-muted-foreground font-mono">{status.modelName}</p>
+                <p className="text-sm font-medium text-green-500">
+                  Model Running
+                </p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {status.modelName}
+                </p>
               </div>
               <Button
                 variant="outline"
@@ -254,8 +273,12 @@ export default function LocalModelsManager() {
             <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
               <Loader2 className="h-5 w-5 animate-spin text-yellow-500" />
               <div>
-                <p className="text-sm font-medium text-yellow-500">Loading Model...</p>
-                <p className="text-xs text-muted-foreground">This may take a moment for large models</p>
+                <p className="text-sm font-medium text-yellow-500">
+                  Loading Model...
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This may take a moment for large models
+                </p>
               </div>
             </div>
           )}
@@ -266,7 +289,9 @@ export default function LocalModelsManager() {
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="flex-1">
                 <p className="font-medium">Error</p>
-                <p className="text-xs mt-1 whitespace-pre-wrap">{status.error || error}</p>
+                <p className="text-xs mt-1 whitespace-pre-wrap">
+                  {status.error || error}
+                </p>
               </div>
               <button
                 onClick={() => setError(null)}
@@ -285,10 +310,21 @@ export default function LocalModelsManager() {
           <div className="flex items-center gap-2">
             <HardDrive className="h-5 w-5 text-muted-foreground" />
             <h3 className="font-semibold">Your Models</h3>
-            <span className="text-sm text-muted-foreground">({localModels.length})</span>
+            <span className="text-sm text-muted-foreground">
+              ({localModels.length})
+            </span>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchLocalModels} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchLocalModels}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
           </Button>
         </div>
 
@@ -307,7 +343,9 @@ export default function LocalModelsManager() {
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{model.fileName}</span>
+                        <span className="font-medium truncate">
+                          {model.fileName}
+                        </span>
                         {isRunning && (
                           <span className="text-xs bg-green-500/20 text-green-500 px-2 py-0.5 rounded">
                             Running
@@ -333,7 +371,10 @@ export default function LocalModelsManager() {
                         <Button
                           size="sm"
                           onClick={() => handleLaunch(model.filePath)}
-                          disabled={status.status === "starting" || status.status === "running"}
+                          disabled={
+                            status.status === "starting" ||
+                            status.status === "running"
+                          }
                         >
                           {isStarting ? (
                             <>
@@ -367,7 +408,9 @@ export default function LocalModelsManager() {
           <Card className="p-6 bg-muted/30 border-dashed">
             <div className="text-center text-muted-foreground">
               <p>No models downloaded yet.</p>
-              <p className="text-sm mt-1">Download a model from HuggingFace or browse for a .gguf file.</p>
+              <p className="text-sm mt-1">
+                Download a model from HuggingFace or browse for a .gguf file.
+              </p>
             </div>
           </Card>
         )}
@@ -405,7 +448,9 @@ export default function LocalModelsManager() {
           <div className="border-t border-border/50 p-4 space-y-4">
             {/* llama-server path */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">llama-server Binary Path</label>
+              <label className="text-sm font-medium">
+                llama-server Binary Path
+              </label>
               <div className="flex gap-2">
                 <Input
                   value={customBinaryPath}
@@ -413,18 +458,29 @@ export default function LocalModelsManager() {
                   placeholder="/path/to/llama-server"
                   className="bg-background/50 font-mono text-sm"
                 />
-                <Button variant="outline" onClick={handleDetectBinary} disabled={isDetectingBinary}>
-                  {isDetectingBinary ? <Loader2 className="h-4 w-4 animate-spin" /> : "Detect"}
+                <Button
+                  variant="outline"
+                  onClick={handleDetectBinary}
+                  disabled={isDetectingBinary}
+                >
+                  {isDetectingBinary ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Detect"
+                  )}
                 </Button>
                 <Button variant="outline" onClick={handleSaveBinaryPath}>
                   Save
                 </Button>
               </div>
               {llamaServerPath ? (
-                <p className="text-xs text-green-500">Detected: {llamaServerPath}</p>
+                <p className="text-xs text-green-500">
+                  Detected: {llamaServerPath}
+                </p>
               ) : (
                 <p className="text-xs text-yellow-500">
-                  llama-server not found. Install llama.cpp or set the path manually.
+                  llama-server not found. Install llama.cpp or set the path
+                  manually.
                 </p>
               )}
             </div>
@@ -450,39 +506,39 @@ export default function LocalModelsManager() {
       {/* Server Logs */}
       {serverLogs.length > 0 && (
         <Card className="bg-background/50 overflow-hidden">
-          <button
-            onClick={() => setShowLogs(!showLogs)}
-            className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
-          >
-            <div className="flex items-center gap-2">
+          <div className="p-4 flex items-center justify-between">
+            <button
+              onClick={() => setShowLogs(!showLogs)}
+              className="flex items-center gap-2 hover:text-foreground transition-colors"
+            >
               <Terminal className="h-5 w-5 text-muted-foreground" />
               <span className="font-semibold">Server Logs</span>
-              <span className="text-xs text-muted-foreground">({serverLogs.length} lines)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearLogs();
-                }}
-              >
-                Clear
-              </Button>
+              <span className="text-xs text-muted-foreground">
+                ({serverLogs.length} lines)
+              </span>
               {showLogs ? (
                 <ChevronUp className="h-5 w-5 text-muted-foreground" />
               ) : (
                 <ChevronDown className="h-5 w-5 text-muted-foreground" />
               )}
-            </div>
-          </button>
+            </button>
+            <Button variant="ghost" size="sm" onClick={clearLogs}>
+              Clear
+            </Button>
+          </div>
 
           {showLogs && (
             <div className="border-t border-border/50 p-4">
               <div className="bg-black/50 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs">
                 {serverLogs.map((log, i) => (
-                  <div key={i} className={log.includes("[stderr]") ? "text-yellow-500" : "text-muted-foreground"}>
+                  <div
+                    key={i}
+                    className={
+                      log.includes("[stderr]")
+                        ? "text-yellow-500"
+                        : "text-muted-foreground"
+                    }
+                  >
                     {log}
                   </div>
                 ))}

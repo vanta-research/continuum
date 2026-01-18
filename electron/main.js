@@ -360,8 +360,9 @@ ipcMain.handle("llama:stop-server", async () => {
 
 function startNextServer() {
   if (isDev) {
-    // In dev mode, assume Next.js is already running
+    // In dev mode, assume Next.js is already running on port 3000
     console.log("Development mode - expecting Next.js on port 3000");
+    process.env.CONTINUUM_PORT = "3000";
     return Promise.resolve();
   }
 
