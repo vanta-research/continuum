@@ -7,7 +7,7 @@
     "name": "VANTA Research",
     "email": "hello@vantaresearch.xyz"
   },
-  "homepage": "https://vantaresearch.com",
+  "homepage": "https://vantaresearch.xyz",
   "main": "electron/main.js",
   "private": true,
   "scripts": {
@@ -86,7 +86,7 @@
         "deb"
       ],
       "synopsis": "AI assistant powered by local and cloud models",
-      "maintainer": "VANTA Research <info@vantaresearch.com>",
+      "maintainer": "VANTA Research <hello@vantaresearch.xyz>",
       "executableName": "continuum"
     },
     "deb": {
