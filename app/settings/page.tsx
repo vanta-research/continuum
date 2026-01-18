@@ -31,6 +31,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import ModelDownloader from "@/components/model-downloader";
+import LocalModelsManager from "@/components/local-models-manager";
 import {
   useAccentColor,
   ACCENT_COLORS,
@@ -1112,22 +1113,41 @@ function SettingsContent() {
               </Card>
             </>
           ) : (
-            <Card className="glass-strong">
-              <div className="p-6">
-                <div className="mb-6">
-                  <h2 className="text-lg font-semibold">Download Models</h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Browse and download VANTA Research models directly from
-                    HuggingFace. Downloaded models are saved locally and can be
-                    used with your llama.cpp server.
-                  </p>
+            <div className="space-y-6">
+              {/* Local Server Management */}
+              <Card className="glass-strong">
+                <div className="p-6">
+                  <div className="mb-6">
+                    <h2 className="text-lg font-semibold">Local Models</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Manage your local models and launch llama.cpp server with
+                      one click.
+                    </p>
+                  </div>
+                  <LocalModelsManager />
                 </div>
-                <ModelDownloader
-                  hfToken={hfToken}
-                  onTokenChange={handleTokenChange}
-                />
-              </div>
-            </Card>
+              </Card>
+
+              {/* Download from HuggingFace */}
+              <Card className="glass-strong">
+                <div className="p-6">
+                  <div className="mb-6">
+                    <h2 className="text-lg font-semibold">
+                      Download from HuggingFace
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Browse and download VANTA Research models directly from
+                      HuggingFace. Downloaded models are saved locally and can
+                      be launched with the server above.
+                    </p>
+                  </div>
+                  <ModelDownloader
+                    hfToken={hfToken}
+                    onTokenChange={handleTokenChange}
+                  />
+                </div>
+              </Card>
+            </div>
           )}
         </div>
       </main>

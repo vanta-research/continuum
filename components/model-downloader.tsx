@@ -15,10 +15,12 @@ import {
   ChevronUp,
   X,
   Search,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { useDownloadManager } from "@/components/download-manager-provider";
 
 interface GGUFFile {
   name: string;
@@ -52,7 +54,7 @@ interface LocalModel {
 }
 
 interface DownloadProgress {
-  status: "starting" | "downloading" | "complete" | "error";
+  status: "starting" | "downloading" | "complete" | "error" | "cancelled";
   progress: number;
   total: number;
   percent: number;
@@ -93,12 +95,6 @@ export default function ModelDownloader({
     username?: string;
     checking: boolean;
   }>({ valid: false, checking: false });
-  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(
-    new Set(),
-  );
-  const [downloadProgress, setDownloadProgress] = useState<
-    Map<string, DownloadProgress>
-  >(new Map());
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
 
   // HuggingFace search state
@@ -109,6 +105,16 @@ export default function ModelDownloader({
   const [expandedSearchResults, setExpandedSearchResults] = useState<
     Set<string>
   >(new Set());
+
+  // Use global download manager
+  const {
+    downloadProgress,
+    startDownload,
+    cancelDownload,
+    clearDownloadProgress,
+    isDownloading,
+    setOnDownloadComplete,
+  } = useDownloadManager();
 
   // Format file size
   const formatSize = (bytes: number): string => {
@@ -196,145 +202,15 @@ export default function ModelDownloader({
     }
   };
 
-  // Download a model file with streaming progress
+  // Download a model file using global download manager
   const downloadModel = async (model: ModelInfo, file: GGUFFile) => {
-    const fileKey = `${model.id}/${file.name}`;
-    setDownloadingFiles((prev) => new Set(prev).add(fileKey));
-    setDownloadProgress((prev) => {
-      const next = new Map(prev);
-      next.set(fileKey, {
-        status: "starting",
-        progress: 0,
-        total: file.size,
-        percent: 0,
-        message: "Starting download...",
-      });
-      return next;
-    });
-
-    try {
-      const response = await fetch("/api/models/download-stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          modelId: model.id,
-          fileName: file.name,
-          downloadUrl: file.downloadUrl,
-          size: file.size,
-          quantization: file.quantization,
-          token: hfToken || undefined,
-        }),
-      });
-
-      // Check if we got JSON response (already downloaded or error)
-      const contentType = response.headers.get("content-type");
-      if (contentType?.includes("application/json")) {
-        const data = await response.json();
-        if (data.alreadyExists) {
-          setDownloadProgress((prev) => {
-            const next = new Map(prev);
-            next.set(fileKey, {
-              status: "complete",
-              progress: file.size,
-              total: file.size,
-              percent: 100,
-              message: "Already downloaded!",
-            });
-            return next;
-          });
-          fetchLocalModels();
-          return;
-        }
-        if (!data.success) {
-          throw new Error(data.error || "Download failed");
-        }
-      }
-
-      // Handle SSE stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (eventType === "progress" || eventType === "complete") {
-                setDownloadProgress((prev) => {
-                  const next = new Map(prev);
-                  next.set(fileKey, {
-                    status: data.status,
-                    progress: data.progress || 0,
-                    total: data.total || file.size,
-                    percent: data.percent || 0,
-                    message: data.message || "",
-                  });
-                  return next;
-                });
-
-                if (eventType === "complete") {
-                  fetchLocalModels();
-                }
-              } else if (eventType === "error") {
-                throw new Error(data.message || "Download failed");
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) {
-                console.error("Failed to parse SSE data:", line);
-              } else {
-                throw e;
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Download failed";
-      setError(errorMessage);
-      setDownloadProgress((prev) => {
-        const next = new Map(prev);
-        next.set(fileKey, {
-          status: "error",
-          progress: 0,
-          total: file.size,
-          percent: 0,
-          message: errorMessage,
-        });
-        return next;
-      });
-    } finally {
-      setDownloadingFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(fileKey);
-        return next;
-      });
-    }
-  };
-
-  // Clear download progress for a file
-  const clearDownloadProgress = (fileKey: string) => {
-    setDownloadProgress((prev) => {
-      const next = new Map(prev);
-      next.delete(fileKey);
-      return next;
+    await startDownload({
+      modelId: model.id,
+      fileName: file.name,
+      downloadUrl: file.downloadUrl,
+      size: file.size,
+      quantization: file.quantization,
+      token: hfToken || undefined,
     });
   };
 
@@ -440,140 +316,19 @@ export default function ModelDownloader({
     }
   };
 
-  // Download from search result
+  // Download from search result (uses same global download manager)
   const downloadSearchResult = async (
     result: HFSearchResult,
     file: GGUFFile,
   ) => {
-    const fileKey = `${result.id}/${file.name}`;
-    setDownloadingFiles((prev) => new Set(prev).add(fileKey));
-    setDownloadProgress((prev) => {
-      const next = new Map(prev);
-      next.set(fileKey, {
-        status: "starting",
-        progress: 0,
-        total: file.size,
-        percent: 0,
-        message: "Starting download...",
-      });
-      return next;
+    await startDownload({
+      modelId: result.id,
+      fileName: file.name,
+      downloadUrl: file.downloadUrl,
+      size: file.size,
+      quantization: file.quantization,
+      token: hfToken || undefined,
     });
-
-    try {
-      const response = await fetch("/api/models/download-stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          modelId: result.id,
-          fileName: file.name,
-          downloadUrl: file.downloadUrl,
-          size: file.size,
-          quantization: file.quantization,
-          token: hfToken || undefined,
-        }),
-      });
-
-      // Check if we got JSON response (already downloaded or error)
-      const contentType = response.headers.get("content-type");
-      if (contentType?.includes("application/json")) {
-        const data = await response.json();
-        if (data.alreadyExists) {
-          setDownloadProgress((prev) => {
-            const next = new Map(prev);
-            next.set(fileKey, {
-              status: "complete",
-              progress: file.size,
-              total: file.size,
-              percent: 100,
-              message: "Already downloaded!",
-            });
-            return next;
-          });
-          fetchLocalModels();
-          return;
-        }
-        if (!data.success) {
-          throw new Error(data.error || "Download failed");
-        }
-      }
-
-      // Handle SSE stream (same logic as downloadModel)
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (eventType === "progress" || eventType === "complete") {
-                setDownloadProgress((prev) => {
-                  const next = new Map(prev);
-                  next.set(fileKey, {
-                    status: data.status,
-                    progress: data.progress || 0,
-                    total: data.total || file.size,
-                    percent: data.percent || 0,
-                    message: data.message || "",
-                  });
-                  return next;
-                });
-
-                if (eventType === "complete") {
-                  fetchLocalModels();
-                }
-              } else if (eventType === "error") {
-                throw new Error(data.message || "Download failed");
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) {
-                console.error("Failed to parse SSE data:", line);
-              } else {
-                throw e;
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Download failed";
-      setError(errorMessage);
-      setDownloadProgress((prev) => {
-        const next = new Map(prev);
-        next.set(fileKey, {
-          status: "error",
-          progress: 0,
-          total: file.size,
-          percent: 0,
-          message: errorMessage,
-        });
-        return next;
-      });
-    } finally {
-      setDownloadingFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(fileKey);
-        return next;
-      });
-    }
   };
 
   // Initial load
@@ -591,6 +346,12 @@ export default function ModelDownloader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hfToken]);
 
+  // Set up callback to refresh local models when downloads complete
+  useEffect(() => {
+    setOnDownloadComplete(fetchLocalModels);
+    return () => setOnDownloadComplete(undefined);
+  }, [setOnDownloadComplete, fetchLocalModels]);
+
   // Progress bar component
   const ProgressBar = ({
     progress,
@@ -601,13 +362,16 @@ export default function ModelDownloader({
   }) => {
     const isComplete = progress.status === "complete";
     const isError = progress.status === "error";
+    const isCancelled = progress.status === "cancelled";
+    const isActive =
+      progress.status === "downloading" || progress.status === "starting";
 
     return (
       <div className="mt-2 space-y-1">
         <div className="flex items-center justify-between text-xs">
           <span
             className={
-              isError
+              isError || isCancelled
                 ? "text-destructive"
                 : isComplete
                   ? "text-green-500"
@@ -617,12 +381,22 @@ export default function ModelDownloader({
             {progress.message}
           </span>
           <div className="flex items-center gap-2">
-            {!isError && progress.total > 0 && (
+            {!isError && !isCancelled && progress.total > 0 && (
               <span className="text-muted-foreground">
                 {formatSize(progress.progress)} / {formatSize(progress.total)}
               </span>
             )}
-            {(isComplete || isError) && (
+            {isActive && (
+              <button
+                onClick={() => cancelDownload(fileKey)}
+                className="text-destructive hover:text-destructive/80 flex items-center gap-1"
+                title="Cancel download"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                <span>Cancel</span>
+              </button>
+            )}
+            {(isComplete || isError || isCancelled) && (
               <button
                 onClick={() => clearDownloadProgress(fileKey)}
                 className="text-muted-foreground hover:text-foreground"
@@ -635,7 +409,7 @@ export default function ModelDownloader({
         <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 ease-out rounded-full ${
-              isError
+              isError || isCancelled
                 ? "bg-destructive"
                 : isComplete
                   ? "bg-green-500"
@@ -895,7 +669,7 @@ export default function ModelDownloader({
                           </div>
                           {result.ggufFiles.map((file) => {
                             const fileKey = `${result.id}/${file.name}`;
-                            const isDownloading = downloadingFiles.has(fileKey);
+                            const downloading = isDownloading(fileKey);
                             const isDownloaded = isFileDownloaded(
                               result.id,
                               file.name,
@@ -922,13 +696,13 @@ export default function ModelDownloader({
                                     variant={
                                       isDownloaded ? "secondary" : "default"
                                     }
-                                    disabled={isDownloading || isDownloaded}
+                                    disabled={downloading || isDownloaded}
                                     onClick={() =>
                                       downloadSearchResult(result, file)
                                     }
                                     className="ml-2"
                                   >
-                                    {isDownloading ? (
+                                    {downloading ? (
                                       <>
                                         <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                                         Downloading
@@ -1062,7 +836,7 @@ export default function ModelDownloader({
                       </div>
                       {model.ggufFiles.map((file) => {
                         const fileKey = `${model.id}/${file.name}`;
-                        const isDownloading = downloadingFiles.has(fileKey);
+                        const downloading = isDownloading(fileKey);
                         const isDownloaded = isFileDownloaded(
                           model.id,
                           file.name,
@@ -1086,11 +860,11 @@ export default function ModelDownloader({
                               <Button
                                 size="sm"
                                 variant={isDownloaded ? "secondary" : "default"}
-                                disabled={isDownloading || isDownloaded}
+                                disabled={downloading || isDownloaded}
                                 onClick={() => downloadModel(model, file)}
                                 className="ml-2"
                               >
-                                {isDownloading ? (
+                                {downloading ? (
                                   <>
                                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                                     Downloading

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
 import "./globals.css";
 import { AccentColorProvider } from "@/components/accent-color-provider";
+import { DownloadManagerProvider } from "@/components/download-manager-provider";
+import { LocalServerProvider } from "@/components/local-server-provider";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -22,7 +24,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark accent-blue">
       <body className={`${roboto.variable} antialiased`}>
-        <AccentColorProvider>{children}</AccentColorProvider>
+        <AccentColorProvider>
+          <DownloadManagerProvider>
+            <LocalServerProvider>{children}</LocalServerProvider>
+          </DownloadManagerProvider>
+        </AccentColorProvider>
       </body>
     </html>
   );

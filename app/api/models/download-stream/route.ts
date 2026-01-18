@@ -1,10 +1,10 @@
-import { NextRequest } from 'next/server';
-import ModelSystem from '@/lib/models';
-import fs from 'fs';
-import path from 'path';
+import { NextRequest } from "next/server";
+import ModelSystem from "@/lib/models";
+import fs from "fs";
+import path from "path";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -17,12 +17,12 @@ export async function POST(request: NextRequest) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'modelId, fileName, and downloadUrl are required',
+          error: "modelId, fileName, and downloadUrl are required",
         }),
         {
           status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }
+          headers: { "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Model already downloaded',
+          message: "Model already downloaded",
           alreadyExists: true,
           model: modelSystem
             .getLocalModels()
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
         }),
         {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
+          headers: { "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         const sendEvent = (event: string, data: object) => {
           controller.enqueue(
-            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+            encoder.encode(
+              `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+            ),
           );
         };
 
@@ -59,14 +61,14 @@ export async function POST(request: NextRequest) {
           // Set up headers for the download
           const headers: Record<string, string> = {};
           if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
+            headers["Authorization"] = `Bearer ${token}`;
           }
 
-          sendEvent('progress', {
-            status: 'starting',
+          sendEvent("progress", {
+            status: "starting",
             progress: 0,
             total: size || 0,
-            message: 'Starting download...',
+            message: "Starting download...",
           });
 
           // Start the download
@@ -74,13 +76,13 @@ export async function POST(request: NextRequest) {
 
           if (!response.ok) {
             throw new Error(
-              `Download failed: ${response.status} ${response.statusText}`
+              `Download failed: ${response.status} ${response.statusText}`,
             );
           }
 
           // Get content length from response if available
           const contentLength =
-            parseInt(response.headers.get('content-length') || '0', 10) ||
+            parseInt(response.headers.get("content-length") || "0", 10) ||
             size ||
             0;
 
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
           // Stream the response to disk with progress tracking
           const reader = response.body?.getReader();
           if (!reader) {
-            throw new Error('No response body');
+            throw new Error("No response body");
           }
 
           const writeStream = fs.createWriteStream(tempFilePath);
@@ -119,13 +121,17 @@ export async function POST(request: NextRequest) {
 
             // Send progress updates at most every 100ms to avoid flooding
             const now = Date.now();
-            if (now - lastProgressUpdate >= 100 || downloadedBytes === contentLength) {
-              const progressPercent = contentLength > 0
-                ? Math.round((downloadedBytes / contentLength) * 100)
-                : 0;
+            if (
+              now - lastProgressUpdate >= 100 ||
+              downloadedBytes === contentLength
+            ) {
+              const progressPercent =
+                contentLength > 0
+                  ? Math.round((downloadedBytes / contentLength) * 100)
+                  : 0;
 
-              sendEvent('progress', {
-                status: 'downloading',
+              sendEvent("progress", {
+                status: "downloading",
                 progress: downloadedBytes,
                 total: contentLength,
                 percent: progressPercent,
@@ -144,6 +150,17 @@ export async function POST(request: NextRequest) {
             });
           });
 
+          // Verify the temp file exists before renaming
+          if (!fs.existsSync(tempFilePath)) {
+            throw new Error("Download incomplete: temporary file not found");
+          }
+
+          // Ensure the target directory exists
+          const targetDir = path.dirname(filePath);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+
           // Rename temp file to final file
           fs.renameSync(tempFilePath, filePath);
 
@@ -152,23 +169,22 @@ export async function POST(request: NextRequest) {
             modelId,
             fileName,
             downloadedBytes || size,
-            quantization || 'Unknown'
+            quantization || "Unknown",
           );
 
-          sendEvent('complete', {
-            status: 'complete',
+          sendEvent("complete", {
+            status: "complete",
             progress: downloadedBytes,
             total: contentLength,
             percent: 100,
-            message: 'Download complete!',
+            message: "Download complete!",
             model: localModel,
           });
         } catch (error) {
-          console.error('Download stream error:', error);
-          sendEvent('error', {
-            status: 'error',
-            message:
-              error instanceof Error ? error.message : 'Download failed',
+          console.error("Download stream error:", error);
+          sendEvent("error", {
+            status: "error",
+            message: error instanceof Error ? error.message : "Download failed",
           });
         } finally {
           controller.close();
@@ -178,23 +194,23 @@ export async function POST(request: NextRequest) {
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
-    console.error('Error initializing download:', error);
+    console.error("Error initializing download:", error);
     return new Response(
       JSON.stringify({
         success: false,
         error:
-          error instanceof Error ? error.message : 'Failed to start download',
+          error instanceof Error ? error.message : "Failed to start download",
       }),
       {
         status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }
+        headers: { "Content-Type": "application/json" },
+      },
     );
   }
 }
