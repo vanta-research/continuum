@@ -1796,7 +1796,7 @@ function ChatInterfaceInner() {
                     value={selectedModel}
                     onValueChange={setSelectedModel}
                   >
-                    <SelectTrigger className="w-full bg-background/50">
+                    <SelectTrigger className="flex-1 min-w-0 bg-background/50">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
