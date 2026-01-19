@@ -465,17 +465,27 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
             "[LoomProvider] Restoring saved document, content length:",
             docData.content.length,
           );
+          const restoredDoc = {
+            id: docData.id || `doc-${Date.now()}`,
+            title: docData.title || "Untitled Document",
+            content: docData.content,
+            createdAt: new Date(docData.createdAt || Date.now()),
+            updatedAt: new Date(docData.updatedAt || Date.now()),
+            lastModifiedBy: docData.lastModifiedBy || "user",
+          };
           dispatch({
             type: "SET_DOCUMENT",
-            payload: {
-              id: docData.id || `doc-${Date.now()}`,
-              title: docData.title || "Untitled Document",
-              content: docData.content,
-              createdAt: new Date(docData.createdAt || Date.now()),
-              updatedAt: new Date(docData.updatedAt || Date.now()),
-              lastModifiedBy: docData.lastModifiedBy || "user",
-            },
+            payload: restoredDoc,
           });
+
+          // Immediately sync to document registry for @mention feature
+          if (restoredDoc.content.trim().length > 0) {
+            addOrUpdateDocument(restoredDoc as LoomDocument);
+            console.log(
+              "[LoomProvider] Synced restored document to registry:",
+              restoredDoc.title,
+            );
+          }
         }
       } catch (e) {
         console.error("[LoomProvider] Failed to restore document:", e);
