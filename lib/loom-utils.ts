@@ -471,56 +471,38 @@ export function cleanAddFileMarkers(text: string): string {
     return text;
   }
 
-  console.log("[cleanAddFileMarkers] Found markers in text, cleaning...");
-  console.log("[cleanAddFileMarkers] Input text length:", text.length);
-
-  // Simple string-based approach that will definitely work
-  // Find the start and end positions
-  const startMarker = "[ADD_FILE]";
-  const endMarker = "[/ADD_FILE]";
+  console.log(
+    "[cleanAddFileMarkers] Found markers, input length:",
+    text.length,
+  );
 
   let result = text;
   let iterations = 0;
-  const maxIterations = 10; // Safety limit
+  const maxIterations = 10;
+  const startMarker = "[ADD_FILE]";
+  const endMarker = "[/ADD_FILE]";
 
-  // Remove all complete [ADD_FILE]...[/ADD_FILE] blocks
+  // Remove complete [ADD_FILE]...[/ADD_FILE] blocks
   while (iterations < maxIterations) {
     const startIdx = result.indexOf(startMarker);
-    console.log(
-      "[cleanAddFileMarkers] Iteration",
-      iterations,
-      "- startIdx:",
-      startIdx,
-    );
     const endIdx = result.indexOf(endMarker);
 
     if (startIdx === -1 && endIdx === -1) {
-      // No markers left
-      break;
+      break; // No markers left
     }
 
     if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
-      // Complete block found - remove it
-      console.log(
-        "[cleanAddFileMarkers] Found complete block, removing from",
-        startIdx,
-        "to",
-        endIdx + endMarker.length,
-      );
+      // Complete block - remove everything from [ADD_FILE] to end of [/ADD_FILE]
       const before = result.substring(0, startIdx);
       const after = result.substring(endIdx + endMarker.length);
       result = before + after;
-      console.log(
-        "[cleanAddFileMarkers] Result length after removal:",
-        result.length,
-      );
+      console.log(`[cleanAddFileMarkers] Removed complete block`);
     } else if (startIdx !== -1 && (endIdx === -1 || endIdx < startIdx)) {
-      // Only start marker, or end comes before start (malformed)
-      // Remove from start marker to end of string (incomplete block)
+      // Start marker but no valid end - remove from start marker to end
       result = result.substring(0, startIdx);
       break;
     } else if (endIdx !== -1 && startIdx === -1) {
-      // Only end marker (orphaned) - remove just the marker
+      // Orphaned end marker - remove just the marker
       result =
         result.substring(0, endIdx) +
         result.substring(endIdx + endMarker.length);
@@ -531,7 +513,7 @@ export function cleanAddFileMarkers(text: string): string {
     iterations++;
   }
 
-  // Clean up any partial markers at the end
+  // Clean up partial markers that might be streaming in
   const partials = [
     "[ADD_FILE",
     "[ADD_FIL",
@@ -555,10 +537,6 @@ export function cleanAddFileMarkers(text: string): string {
     }
   }
 
-  console.log("[cleanAddFileMarkers] Final result length:", result.length);
-  console.log(
-    "[cleanAddFileMarkers] Final result preview:",
-    result.substring(0, 200),
-  );
+  console.log("[cleanAddFileMarkers] Final length:", result.length);
   return result.trim();
 }

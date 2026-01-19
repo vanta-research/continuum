@@ -856,7 +856,7 @@ function ChatInterfaceInner() {
 
       // Helper to clean loom edit markers from text for display
       const cleanLoomMarkers = (text: string): string => {
-        // Remove complete loom edit blocks (model still uses CANVAS_EDIT markers)
+        // Remove complete loom edit blocks (legacy CANVAS_EDIT markers)
         // Also handles markdown formatting (---) around the markers
         let cleaned = text.replace(
           /---\s*\[CANVAS_EDIT_START:\d+\]\s*---[\s\S]*?---\s*\[CANVAS_EDIT_END\]\s*---/g,
@@ -866,22 +866,38 @@ function ChatInterfaceInner() {
           /\[CANVAS_EDIT_START:\d+\]\s*(?:---\s*)?[\s\S]*?(?:\s*---\s*)?\[CANVAS_EDIT_END\]/g,
           "",
         );
-        // Remove partial/incomplete start markers (in case we're mid-stream)
+        // Remove partial/incomplete CANVAS_EDIT markers (in case we're mid-stream)
         cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, "");
-        // Remove any trailing partial marker that might be forming
         cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, "");
         cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, "");
-        cleaned = cleaned.replace(/\[[^\]]*$/, ""); // Any incomplete bracket
+        // NOTE: Removed the aggressive /\[[^\]]*$/ pattern as it was breaking ADD_FILE markers
         return cleaned.trim();
       };
 
       // Helper to clean all tool markers from text for display
       const cleanAllToolMarkers = (text: string): string => {
+        const hasStart = text.includes("[ADD_FILE]");
+        const hasEnd = text.includes("[/ADD_FILE]");
         console.log(
-          "[cleanAllToolMarkers] Input has ADD_FILE?:",
-          text.includes("[ADD_FILE]"),
+          "[cleanAllToolMarkers] Input has [ADD_FILE]:",
+          hasStart,
+          "has [/ADD_FILE]:",
+          hasEnd,
+          "length:",
+          text.length,
         );
-        console.log("[cleanAllToolMarkers] Input length:", text.length);
+
+        // If we have both markers, log a preview
+        if (hasStart && hasEnd) {
+          const startIdx = text.indexOf("[ADD_FILE]");
+          const endIdx = text.indexOf("[/ADD_FILE]");
+          console.log(
+            "[cleanAllToolMarkers] Marker positions - start:",
+            startIdx,
+            "end:",
+            endIdx,
+          );
+        }
 
         let cleaned = cleanLoomMarkers(text);
         console.log(
@@ -899,6 +915,8 @@ function ChatInterfaceInner() {
         console.log(
           "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
           cleaned.includes("[ADD_FILE]"),
+          "has [/ADD_FILE]:",
+          cleaned.includes("[/ADD_FILE]"),
         );
         console.log("[cleanAllToolMarkers] Final length:", cleaned.length);
 
@@ -1380,7 +1398,7 @@ function ChatInterfaceInner() {
               );
 
               // Update chat message to indicate pending review
-              const cleanedMessage = cleanLoomMarkers(fullResponse);
+              const cleanedMessage = cleanAllToolMarkers(fullResponse);
 
               // Compute just the added lines for display
               const diff = computeDiff(originalContent, editContent);
