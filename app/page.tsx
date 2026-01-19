@@ -394,6 +394,7 @@ function ChatInterfaceInner() {
           }
         }
       }
+      await finalizeAssistantResponse(fullResponse, newAssistantMessage.id);
     } catch (error) {
       console.error("Failed to fetch enabled models:", error);
     } finally {
@@ -716,6 +717,617 @@ function ChatInterfaceInner() {
     return { top: -10, left: 0 };
   };
 
+  const cleanLoomMarkers = (text: string): string => {
+    // Remove complete loom edit blocks (legacy CANVAS_EDIT markers)
+    // Also handles markdown formatting (---) around the markers
+    let cleaned = text.replace(
+      /---\s*\[CANVAS_EDIT_START:\d+\]\s*---[\s\S]*?---\s*\[CANVAS_EDIT_END\]\s*---/g,
+      "",
+    );
+    cleaned = cleaned.replace(
+      /\[CANVAS_EDIT_START:\d+\]\s*(?:---\s*)?[\s\S]*?(?:\s*---\s*)?\[CANVAS_EDIT_END\]/g,
+      "",
+    );
+    // Remove partial/incomplete CANVAS_EDIT markers (in case we're mid-stream)
+    cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, "");
+    cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, "");
+    cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, "");
+    // NOTE: Removed the aggressive /\[[^\]]*$/ pattern as it was breaking ADD_FILE markers
+    return cleaned.trim();
+  };
+
+  const cleanAllToolMarkers = (text: string): string => {
+    const hasStart = text.includes("[ADD_FILE]");
+    const hasEnd = text.includes("[/ADD_FILE]");
+    console.log(
+      "[cleanAllToolMarkers] Input has [ADD_FILE]:",
+      hasStart,
+      "has [/ADD_FILE]:",
+      hasEnd,
+      "length:",
+      text.length,
+    );
+
+    // If we have both markers, log a preview
+    if (hasStart && hasEnd) {
+      const startIdx = text.indexOf("[ADD_FILE]");
+      const endIdx = text.indexOf("[/ADD_FILE]");
+      console.log(
+        "[cleanAllToolMarkers] Marker positions - start:",
+        startIdx,
+        "end:",
+        endIdx,
+      );
+    }
+
+    let cleaned = cleanLoomMarkers(text);
+    console.log(
+      "[cleanAllToolMarkers] After cleanLoomMarkers, has ADD_FILE?:",
+      cleaned.includes("[ADD_FILE]"),
+    );
+
+    cleaned = cleanProjectToolMarkers(cleaned);
+    console.log(
+      "[cleanAllToolMarkers] After cleanProjectToolMarkers, has ADD_FILE?:",
+      cleaned.includes("[ADD_FILE]"),
+    );
+
+    cleaned = cleanAddFileMarkers(cleaned);
+    console.log(
+      "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
+      cleaned.includes("[ADD_FILE]"),
+      "has [/ADD_FILE]:",
+      cleaned.includes("[/ADD_FILE]"),
+    );
+    console.log("[cleanAllToolMarkers] Final length:", cleaned.length);
+
+    return cleaned;
+  };
+
+  const finalizeAssistantResponse = async (
+    fullResponse: string,
+    assistantMessageId: string,
+  ) => {
+    // After streaming completes, extract and apply loom edits
+    // Use loomRef.current to get the latest loom state (avoids stale closure)
+    const currentLoom = loomRef.current;
+    const isLoomStillActive =
+      currentLoom.state.isLoomMode && currentLoom.state.document;
+
+    // Debug logging for loom edit detection
+    console.log("[Loom Debug] === Streaming Complete ===");
+    console.log("[Loom Debug] isLoomStillActive:", isLoomStillActive);
+    console.log(
+      "[Loom Debug] loom.state.isLoomMode:",
+      currentLoom.state.isLoomMode,
+    );
+    console.log(
+      "[Loom Debug] loom.state.document exists:",
+      !!currentLoom.state.document,
+    );
+    console.log("[Loom Debug] fullResponse length:", fullResponse.length);
+    console.log(
+      "[Loom Debug] fullResponse preview:",
+      fullResponse.substring(0, 500),
+    );
+    console.log(
+      "[Loom Debug] fullResponse end:",
+      fullResponse.substring(Math.max(0, fullResponse.length - 200)),
+    );
+    const hasAddFileStart = fullResponse.includes("[ADD_FILE]");
+    const hasAddFileEnd = fullResponse.includes("[/ADD_FILE]");
+    console.log("[Loom Debug] Contains ADD_FILE:", hasAddFileStart);
+    console.log("[Loom Debug] Contains /ADD_FILE:", hasAddFileEnd);
+
+    // Additional debug: if ADD_FILE markers exist but Loom isn't active, log warning
+    if (hasAddFileStart && hasAddFileEnd && !isLoomStillActive) {
+      console.warn(
+        "[Loom Debug] WARNING: ADD_FILE markers found but Loom is NOT active!",
+        "isLoomMode:",
+        currentLoom.state.isLoomMode,
+        "hasDocument:",
+        !!currentLoom.state.document,
+      );
+      console.log(
+        "[Loom Debug] ADD_FILE content will NOT be inserted into Loom because Loom is inactive",
+      );
+    }
+
+    if (isLoomStillActive) {
+      // Debug: log the full response before attempting to match
+      console.log(
+        "[Loom Debug] Full response for regex match (first 1000 chars):",
+        fullResponse.substring(0, 1000),
+      );
+      console.log(
+        "[Loom Debug] Full response for regex match (last 500 chars):",
+        fullResponse.substring(Math.max(0, fullResponse.length - 500)),
+      );
+
+      // Track if we handled edits via surgical mode
+      let handledBySurgicalEdit = false;
+
+      // Check for surgical edits first (for large documents)
+      if (containsSurgicalEdits(fullResponse)) {
+        console.log("[Loom Debug] Found SURGICAL_EDIT markers");
+        const surgicalEdits = parseSurgicalEdits(fullResponse);
+        console.log(
+          "[Loom Debug] Parsed surgical edits count:",
+          surgicalEdits.length,
+        );
+
+        if (surgicalEdits.length > 0) {
+          const currentDocContent = currentLoom.state.document?.content || "";
+
+          if (currentLoom.state.autoAcceptEdits) {
+            // Apply surgical edits directly
+            console.log(
+              "[Loom Debug] Auto-accept ON, applying surgical edits directly",
+            );
+            const result = applySurgicalEdits(currentDocContent, surgicalEdits);
+            if (result.success) {
+              currentLoom.updateContent(result.newContent);
+              console.log(
+                "[Loom Debug] Applied",
+                result.appliedEdits,
+                "surgical edits",
+              );
+            } else {
+              console.error(
+                "[Loom Debug] Surgical edit errors:",
+                result.errors,
+              );
+            }
+
+            // Clean up chat message
+            const cleanedMessage = fullResponse
+              .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
+              .trim();
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                `Done! Applied ${result.appliedEdits} edit${result.appliedEdits !== 1 ? "s" : ""} to the document.`,
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+          } else {
+            // Queue surgical edits for review
+            console.log(
+              "[Loom Debug] Auto-accept OFF, queuing surgical edits for review",
+            );
+            for (const edit of surgicalEdits) {
+              const pending = surgicalEditToPendingFormat(
+                edit,
+                currentDocContent,
+              );
+              currentLoom.addPendingEdit(
+                pending.targetLine,
+                pending.originalContent,
+                pending.newContent,
+              );
+            }
+
+            // Clean up chat message
+            const cleanedMessage = fullResponse
+              .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
+              .trim();
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                `I've prepared ${surgicalEdits.length} edit${surgicalEdits.length !== 1 ? "s" : ""} for your review. Check the Loom panel to accept or reject the changes.`,
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+          }
+          // Mark that we handled this via surgical edits
+          handledBySurgicalEdit = true;
+        }
+      }
+
+      // Only process edits if we didn't already handle surgical edits
+      if (!handledBySurgicalEdit) {
+        // Try CANVAS_EDIT format first (legacy)
+        const editMatch = fullResponse.match(
+          /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
+        );
+
+        // If no CANVAS_EDIT, try ADD_FILE format (preferred)
+        let targetLine = 1;
+        let editContent = "";
+
+        if (editMatch) {
+          console.log("[Loom Debug] Found CANVAS_EDIT format");
+          targetLine = parseInt(editMatch[1], 10);
+          editContent = editMatch[2].trim();
+        } else {
+          // Try ADD_FILE format
+          console.log("[Loom Debug] Trying ADD_FILE format match...");
+          const addFileMatch = fullResponse.match(
+            /\[ADD_FILE\]([\s\S]*?)\[\/ADD_FILE\]/,
+          );
+          console.log(
+            "[Loom Debug] ADD_FILE regex match result:",
+            !!addFileMatch,
+          );
+
+          if (addFileMatch) {
+            console.log("[Loom Debug] Found ADD_FILE format");
+            const jsonContent = addFileMatch[1];
+            console.log(
+              "[Loom Debug] ADD_FILE JSON content preview:",
+              jsonContent.substring(0, 200),
+            );
+
+            // Extract content from JSON wrapper
+            try {
+              const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+              console.log(
+                "[Loom Debug] JSON object match result:",
+                !!jsonMatch,
+              );
+              if (jsonMatch) {
+                console.log(
+                  "[Loom Debug] Attempting JSON.parse on:",
+                  jsonMatch[0].substring(0, 100),
+                );
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log(
+                  "[Loom Debug] JSON parsed successfully, has content:",
+                  !!parsed.content,
+                );
+                if (parsed.content) {
+                  editContent = parsed.content;
+                  console.log(
+                    "[Loom Debug] Extracted content from ADD_FILE JSON, length:",
+                    editContent.length,
+                  );
+                }
+              }
+            } catch (parseError) {
+              console.error("[Loom Debug] JSON.parse failed:", parseError);
+              // Try regex fallback for malformed JSON
+              console.log("[Loom Debug] Trying regex fallback...");
+              const contentMatch = jsonContent.match(
+                /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+              );
+              console.log(
+                "[Loom Debug] Regex fallback match result:",
+                !!contentMatch,
+              );
+              if (contentMatch) {
+                editContent = contentMatch[1]
+                  .replace(/\\n/g, "\n")
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, "\\")
+                  .replace(/\\t/g, "\t");
+                console.log(
+                  "[Loom Debug] Extracted content via regex fallback, length:",
+                  editContent.length,
+                );
+              }
+            }
+          } else {
+            console.log("[Loom Debug] No ADD_FILE match found in response");
+            console.log(
+              "[Loom Debug] Response preview for debugging:",
+              fullResponse.substring(0, 500),
+            );
+          }
+        }
+
+        console.log("[Loom Debug] editContent found:", editContent.length > 0);
+        if (editContent.length > 0) {
+          console.log("[Loom Debug] Target line:", targetLine);
+          console.log("[Loom Debug] Edit content length:", editContent.length);
+          console.log(
+            "[Loom Debug] autoAcceptEdits:",
+            currentLoom.state.autoAcceptEdits,
+          );
+        }
+
+        if (editContent.length > 0) {
+          const currentDocContent = currentLoom.state.document?.content || "";
+
+          console.log("[Loom Debug] Processing edit:");
+          console.log("[Loom Debug] - targetLine:", targetLine);
+          console.log(
+            "[Loom Debug] - editContent preview:",
+            editContent.substring(0, 200),
+          );
+          console.log(
+            "[Loom Debug] - currentDocContent length:",
+            currentDocContent.length,
+          );
+
+          // Check if auto-accept is enabled (use current state, not stale)
+          if (currentLoom.state.autoAcceptEdits) {
+            // Apply edit directly to loom (existing behavior)
+            console.log(
+              "[Loom Debug] Auto-accept is ON, applying edit directly",
+            );
+            const newContent = applyEditToDocument(
+              currentDocContent,
+              targetLine,
+              editContent,
+            );
+            console.log(
+              "[Loom Debug] New content length after apply:",
+              newContent.length,
+            );
+            console.log(
+              "[Loom Debug] New content preview:",
+              newContent.substring(0, 200),
+            );
+            currentLoom.updateContent(newContent);
+            console.log("[Loom Debug] Content updated in Loom");
+
+            // Final cleanup of chat message (handles both ADD_FILE and CANVAS_EDIT)
+            const cleanedMessage = cleanAllToolMarkers(fullResponse);
+            console.log(
+              "[Loom Debug] cleanedMessage length:",
+              cleanedMessage.length,
+            );
+            console.log(
+              "[Loom Debug] cleanedMessage preview:",
+              cleanedMessage.substring(0, 300),
+            );
+            console.log(
+              "[Loom Debug] cleanedMessage still has ADD_FILE?:",
+              cleanedMessage.includes("[ADD_FILE]"),
+            );
+
+            // Compute just the added lines for display
+            const diff = computeDiff(currentDocContent, editContent);
+            const addedLines = diff.lines
+              .filter((line) => line.type === "added")
+              .map((line) => line.content)
+              .join("\n");
+
+            console.log(
+              "[Loom Debug] About to update session with cleanedMessage",
+            );
+            setSessions((prevSessions) => {
+              console.log(
+                "[Loom Debug] Inside setSessions callback, cleanedMessage:",
+                cleanedMessage.substring(0, 100),
+              );
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                "Done! I've updated the Loom for you.",
+                              loomContent: addedLines || editContent,
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+            console.log("[Loom Debug] setSessions called for auto-accept path");
+          } else {
+            // Queue the edit for review (new diff-based workflow)
+            console.log(
+              "[Loom Debug] Auto-accept is OFF, queuing edit for review",
+            );
+            const editContentLines = editContent.split("\n").length;
+            const originalContent = extractOriginalContent(
+              currentDocContent,
+              targetLine,
+              editContentLines,
+            );
+
+            console.log("[Loom Debug] Creating pending edit:");
+            console.log("[Loom Debug] - editContentLines:", editContentLines);
+            console.log(
+              "[Loom Debug] - originalContent length:",
+              originalContent.length,
+            );
+            console.log(
+              "[Loom Debug] - originalContent preview:",
+              originalContent.substring(0, 100),
+            );
+
+            // Add to pending edits queue
+            currentLoom.addPendingEdit(
+              targetLine,
+              originalContent,
+              editContent,
+            );
+            console.log("[Loom Debug] Pending edit added to queue");
+            console.log(
+              "[Loom Debug] Current pending edits count:",
+              currentLoom.state.pendingEdits.length + 1,
+            );
+
+            // Update chat message to indicate pending review
+            const cleanedMessage = cleanAllToolMarkers(fullResponse);
+
+            // Compute just the added lines for display
+            const diff = computeDiff(originalContent, editContent);
+            const addedLines = diff.lines
+              .filter((line) => line.type === "added")
+              .map((line) => line.content)
+              .join("\n");
+
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? {
+                              ...msg,
+                              content:
+                                cleanedMessage ||
+                                "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
+                              loomContent: addedLines || editContent,
+                            }
+                          : msg,
+                      ),
+                    }
+                  : s,
+              );
+            });
+          }
+        }
+      } // End of !handledBySurgicalEdit block
+    }
+
+    // After streaming completes, check for project creation tool
+    const projectToolResult = parseProjectToolMarkers(fullResponse);
+    if (projectToolResult.found && projectToolResult.payload) {
+      try {
+        // Create the project via API (with initial file support)
+        const response = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: projectToolResult.payload.name,
+            description: projectToolResult.payload.description || "",
+            initialFile: projectToolResult.payload.initialFile,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.project) {
+          // Refresh project list and switch to the new project
+          await refreshProjects();
+          await switchProject(data.project.id);
+
+          // Show notification
+          setProjectCreatedNotification({
+            show: true,
+            projectName: data.project.name,
+            projectId: data.project.id,
+          });
+
+          // Auto-hide notification after 5 seconds
+          setTimeout(() => {
+            setProjectCreatedNotification(null);
+          }, 5000);
+
+          // Update the message to show cleaned content
+          const cleanedContent =
+            projectToolResult.cleanedContent ||
+            `I've created the project "${data.project.name}" for you! You can find it in the project switcher.`;
+
+          setSessions((prevSessions) => {
+            return prevSessions.map((s) =>
+              s.id === currentSessionId
+                ? {
+                    ...s,
+                    messages: s.messages.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: cleanedContent }
+                        : msg,
+                    ),
+                  }
+                : s,
+            );
+          });
+        }
+      } catch (error) {
+        console.error("Failed to create project from AI response:", error);
+      }
+    }
+
+    // Check for ADD_FILE tool in response
+    const addFileResult = parseAddFileMarkers(fullResponse);
+    if (
+      addFileResult.found &&
+      addFileResult.payload &&
+      projectState.activeProjectId
+    ) {
+      try {
+        const fileName = addFileResult.payload.name;
+        // Determine MIME type from file extension
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const mimeTypes: Record<string, string> = {
+          md: "text/markdown",
+          txt: "text/plain",
+          js: "text/javascript",
+          ts: "text/typescript",
+          jsx: "text/jsx",
+          tsx: "text/tsx",
+          py: "text/x-python",
+          json: "application/json",
+          html: "text/html",
+          css: "text/css",
+          yaml: "text/yaml",
+          yml: "text/yaml",
+        };
+        const mimeType = mimeTypes[ext] || "text/plain";
+
+        const blob = new Blob([addFileResult.payload.content], {
+          type: mimeType,
+        });
+        const file = new File([blob], fileName, { type: mimeType });
+
+        // Use uploadFile from project provider - this updates state immediately
+        const uploadedFile = await uploadFile(file);
+
+        if (uploadedFile) {
+          // Update the message to show cleaned content
+          const cleanedContent =
+            addFileResult.cleanedContent ||
+            `I've created the file "${fileName}" in your workspace.`;
+
+          setSessions((prevSessions) => {
+            return prevSessions.map((s) =>
+              s.id === currentSessionId
+                ? {
+                    ...s,
+                    messages: s.messages.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: cleanedContent }
+                        : msg,
+                    ),
+                  }
+                : s,
+            );
+          });
+        } else {
+          console.error("Failed to create file");
+        }
+      } catch (error) {
+        console.error("Failed to create file from AI response:", error);
+      }
+    }
+  };
+
   const handleSendMessage = async () => {
     if ((!input.trim() && attachments.length === 0) || isLoading) return;
 
@@ -854,75 +1466,6 @@ function ChatInterfaceInner() {
       let buffer = "";
       let fullResponse = ""; // Accumulate complete response
 
-      // Helper to clean loom edit markers from text for display
-      const cleanLoomMarkers = (text: string): string => {
-        // Remove complete loom edit blocks (legacy CANVAS_EDIT markers)
-        // Also handles markdown formatting (---) around the markers
-        let cleaned = text.replace(
-          /---\s*\[CANVAS_EDIT_START:\d+\]\s*---[\s\S]*?---\s*\[CANVAS_EDIT_END\]\s*---/g,
-          "",
-        );
-        cleaned = cleaned.replace(
-          /\[CANVAS_EDIT_START:\d+\]\s*(?:---\s*)?[\s\S]*?(?:\s*---\s*)?\[CANVAS_EDIT_END\]/g,
-          "",
-        );
-        // Remove partial/incomplete CANVAS_EDIT markers (in case we're mid-stream)
-        cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, "");
-        cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, "");
-        cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, "");
-        // NOTE: Removed the aggressive /\[[^\]]*$/ pattern as it was breaking ADD_FILE markers
-        return cleaned.trim();
-      };
-
-      // Helper to clean all tool markers from text for display
-      const cleanAllToolMarkers = (text: string): string => {
-        const hasStart = text.includes("[ADD_FILE]");
-        const hasEnd = text.includes("[/ADD_FILE]");
-        console.log(
-          "[cleanAllToolMarkers] Input has [ADD_FILE]:",
-          hasStart,
-          "has [/ADD_FILE]:",
-          hasEnd,
-          "length:",
-          text.length,
-        );
-
-        // If we have both markers, log a preview
-        if (hasStart && hasEnd) {
-          const startIdx = text.indexOf("[ADD_FILE]");
-          const endIdx = text.indexOf("[/ADD_FILE]");
-          console.log(
-            "[cleanAllToolMarkers] Marker positions - start:",
-            startIdx,
-            "end:",
-            endIdx,
-          );
-        }
-
-        let cleaned = cleanLoomMarkers(text);
-        console.log(
-          "[cleanAllToolMarkers] After cleanLoomMarkers, has ADD_FILE?:",
-          cleaned.includes("[ADD_FILE]"),
-        );
-
-        cleaned = cleanProjectToolMarkers(cleaned);
-        console.log(
-          "[cleanAllToolMarkers] After cleanProjectToolMarkers, has ADD_FILE?:",
-          cleaned.includes("[ADD_FILE]"),
-        );
-
-        cleaned = cleanAddFileMarkers(cleaned);
-        console.log(
-          "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
-          cleaned.includes("[ADD_FILE]"),
-          "has [/ADD_FILE]:",
-          cleaned.includes("[/ADD_FILE]"),
-        );
-        console.log("[cleanAllToolMarkers] Final length:", cleaned.length);
-
-        return cleaned;
-      };
-
       if (!reader) {
         throw new Error("No response body");
       }
@@ -1004,555 +1547,7 @@ function ChatInterfaceInner() {
         }
       }
 
-      // After streaming completes, extract and apply loom edits
-      // Use loomRef.current to get the latest loom state (avoids stale closure)
-      const currentLoom = loomRef.current;
-      const isLoomStillActive =
-        currentLoom.state.isLoomMode && currentLoom.state.document;
-
-      // Debug logging for loom edit detection
-      console.log("[Loom Debug] === Streaming Complete ===");
-      console.log("[Loom Debug] isLoomStillActive:", isLoomStillActive);
-      console.log(
-        "[Loom Debug] loom.state.isLoomMode:",
-        currentLoom.state.isLoomMode,
-      );
-      console.log(
-        "[Loom Debug] loom.state.document exists:",
-        !!currentLoom.state.document,
-      );
-      console.log("[Loom Debug] fullResponse length:", fullResponse.length);
-      console.log(
-        "[Loom Debug] fullResponse preview:",
-        fullResponse.substring(0, 500),
-      );
-      console.log(
-        "[Loom Debug] fullResponse end:",
-        fullResponse.substring(Math.max(0, fullResponse.length - 200)),
-      );
-      const hasAddFileStart = fullResponse.includes("[ADD_FILE]");
-      const hasAddFileEnd = fullResponse.includes("[/ADD_FILE]");
-      console.log("[Loom Debug] Contains ADD_FILE:", hasAddFileStart);
-      console.log("[Loom Debug] Contains /ADD_FILE:", hasAddFileEnd);
-
-      // Additional debug: if ADD_FILE markers exist but Loom isn't active, log warning
-      if (hasAddFileStart && hasAddFileEnd && !isLoomStillActive) {
-        console.warn(
-          "[Loom Debug] WARNING: ADD_FILE markers found but Loom is NOT active!",
-          "isLoomMode:",
-          currentLoom.state.isLoomMode,
-          "hasDocument:",
-          !!currentLoom.state.document,
-        );
-        console.log(
-          "[Loom Debug] ADD_FILE content will NOT be inserted into Loom because Loom is inactive",
-        );
-      }
-
-      if (isLoomStillActive) {
-        // Debug: log the full response before attempting to match
-        console.log(
-          "[Loom Debug] Full response for regex match (first 1000 chars):",
-          fullResponse.substring(0, 1000),
-        );
-        console.log(
-          "[Loom Debug] Full response for regex match (last 500 chars):",
-          fullResponse.substring(Math.max(0, fullResponse.length - 500)),
-        );
-
-        // Track if we handled edits via surgical mode
-        let handledBySurgicalEdit = false;
-
-        // Check for surgical edits first (for large documents)
-        if (containsSurgicalEdits(fullResponse)) {
-          console.log("[Loom Debug] Found SURGICAL_EDIT markers");
-          const surgicalEdits = parseSurgicalEdits(fullResponse);
-          console.log(
-            "[Loom Debug] Parsed surgical edits count:",
-            surgicalEdits.length,
-          );
-
-          if (surgicalEdits.length > 0) {
-            const currentDocContent = currentLoom.state.document?.content || "";
-
-            if (currentLoom.state.autoAcceptEdits) {
-              // Apply surgical edits directly
-              console.log(
-                "[Loom Debug] Auto-accept ON, applying surgical edits directly",
-              );
-              const result = applySurgicalEdits(
-                currentDocContent,
-                surgicalEdits,
-              );
-              if (result.success) {
-                currentLoom.updateContent(result.newContent);
-                console.log(
-                  "[Loom Debug] Applied",
-                  result.appliedEdits,
-                  "surgical edits",
-                );
-              } else {
-                console.error(
-                  "[Loom Debug] Surgical edit errors:",
-                  result.errors,
-                );
-              }
-
-              // Clean up chat message
-              const cleanedMessage = fullResponse
-                .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
-                .trim();
-              setSessions((prevSessions) => {
-                return prevSessions.map((s) =>
-                  s.id === currentSessionId
-                    ? {
-                        ...s,
-                        messages: s.messages.map((msg) =>
-                          msg.id === assistantMessage.id
-                            ? {
-                                ...msg,
-                                content:
-                                  cleanedMessage ||
-                                  `Done! Applied ${result.appliedEdits} edit${result.appliedEdits !== 1 ? "s" : ""} to the document.`,
-                              }
-                            : msg,
-                        ),
-                      }
-                    : s,
-                );
-              });
-            } else {
-              // Queue surgical edits for review
-              console.log(
-                "[Loom Debug] Auto-accept OFF, queuing surgical edits for review",
-              );
-              for (const edit of surgicalEdits) {
-                const pending = surgicalEditToPendingFormat(
-                  edit,
-                  currentDocContent,
-                );
-                currentLoom.addPendingEdit(
-                  pending.targetLine,
-                  pending.originalContent,
-                  pending.newContent,
-                );
-              }
-
-              // Clean up chat message
-              const cleanedMessage = fullResponse
-                .replace(/\[SURGICAL_EDIT\][\s\S]*?\[\/SURGICAL_EDIT\]/g, "")
-                .trim();
-              setSessions((prevSessions) => {
-                return prevSessions.map((s) =>
-                  s.id === currentSessionId
-                    ? {
-                        ...s,
-                        messages: s.messages.map((msg) =>
-                          msg.id === assistantMessage.id
-                            ? {
-                                ...msg,
-                                content:
-                                  cleanedMessage ||
-                                  `I've prepared ${surgicalEdits.length} edit${surgicalEdits.length !== 1 ? "s" : ""} for your review. Check the Loom panel to accept or reject the changes.`,
-                              }
-                            : msg,
-                        ),
-                      }
-                    : s,
-                );
-              });
-            }
-            // Mark that we handled this via surgical edits
-            handledBySurgicalEdit = true;
-          }
-        }
-
-        // Only process edits if we didn't already handle surgical edits
-        if (!handledBySurgicalEdit) {
-          // Try CANVAS_EDIT format first (legacy)
-          const editMatch = fullResponse.match(
-            /\[CANVAS_EDIT_START:(\d+)\]\s*(?:---\s*)?([\s\S]*?)(?:\s*---\s*)?\[CANVAS_EDIT_END\]/,
-          );
-
-          // If no CANVAS_EDIT, try ADD_FILE format (preferred)
-          let targetLine = 1;
-          let editContent = "";
-
-          if (editMatch) {
-            console.log("[Loom Debug] Found CANVAS_EDIT format");
-            targetLine = parseInt(editMatch[1], 10);
-            editContent = editMatch[2].trim();
-          } else {
-            // Try ADD_FILE format
-            console.log("[Loom Debug] Trying ADD_FILE format match...");
-            const addFileMatch = fullResponse.match(
-              /\[ADD_FILE\]([\s\S]*?)\[\/ADD_FILE\]/,
-            );
-            console.log(
-              "[Loom Debug] ADD_FILE regex match result:",
-              !!addFileMatch,
-            );
-
-            if (addFileMatch) {
-              console.log("[Loom Debug] Found ADD_FILE format");
-              const jsonContent = addFileMatch[1];
-              console.log(
-                "[Loom Debug] ADD_FILE JSON content preview:",
-                jsonContent.substring(0, 200),
-              );
-
-              // Extract content from JSON wrapper
-              try {
-                const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
-                console.log(
-                  "[Loom Debug] JSON object match result:",
-                  !!jsonMatch,
-                );
-                if (jsonMatch) {
-                  console.log(
-                    "[Loom Debug] Attempting JSON.parse on:",
-                    jsonMatch[0].substring(0, 100),
-                  );
-                  const parsed = JSON.parse(jsonMatch[0]);
-                  console.log(
-                    "[Loom Debug] JSON parsed successfully, has content:",
-                    !!parsed.content,
-                  );
-                  if (parsed.content) {
-                    editContent = parsed.content;
-                    console.log(
-                      "[Loom Debug] Extracted content from ADD_FILE JSON, length:",
-                      editContent.length,
-                    );
-                  }
-                }
-              } catch (parseError) {
-                console.error("[Loom Debug] JSON.parse failed:", parseError);
-                // Try regex fallback for malformed JSON
-                console.log("[Loom Debug] Trying regex fallback...");
-                const contentMatch = jsonContent.match(
-                  /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/,
-                );
-                console.log(
-                  "[Loom Debug] Regex fallback match result:",
-                  !!contentMatch,
-                );
-                if (contentMatch) {
-                  editContent = contentMatch[1]
-                    .replace(/\\n/g, "\n")
-                    .replace(/\\"/g, '"')
-                    .replace(/\\\\/g, "\\")
-                    .replace(/\\t/g, "\t");
-                  console.log(
-                    "[Loom Debug] Extracted content via regex fallback, length:",
-                    editContent.length,
-                  );
-                }
-              }
-            } else {
-              console.log("[Loom Debug] No ADD_FILE match found in response");
-              console.log(
-                "[Loom Debug] Response preview for debugging:",
-                fullResponse.substring(0, 500),
-              );
-            }
-          }
-
-          console.log(
-            "[Loom Debug] editContent found:",
-            editContent.length > 0,
-          );
-          if (editContent.length > 0) {
-            console.log("[Loom Debug] Target line:", targetLine);
-            console.log(
-              "[Loom Debug] Edit content length:",
-              editContent.length,
-            );
-            console.log(
-              "[Loom Debug] autoAcceptEdits:",
-              currentLoom.state.autoAcceptEdits,
-            );
-          }
-
-          if (editContent.length > 0) {
-            const currentDocContent = currentLoom.state.document?.content || "";
-
-            console.log("[Loom Debug] Processing edit:");
-            console.log("[Loom Debug] - targetLine:", targetLine);
-            console.log(
-              "[Loom Debug] - editContent preview:",
-              editContent.substring(0, 200),
-            );
-            console.log(
-              "[Loom Debug] - currentDocContent length:",
-              currentDocContent.length,
-            );
-
-            // Check if auto-accept is enabled (use current state, not stale)
-            if (currentLoom.state.autoAcceptEdits) {
-              // Apply edit directly to loom (existing behavior)
-              console.log(
-                "[Loom Debug] Auto-accept is ON, applying edit directly",
-              );
-              const newContent = applyEditToDocument(
-                currentDocContent,
-                targetLine,
-                editContent,
-              );
-              console.log(
-                "[Loom Debug] New content length after apply:",
-                newContent.length,
-              );
-              console.log(
-                "[Loom Debug] New content preview:",
-                newContent.substring(0, 200),
-              );
-              currentLoom.updateContent(newContent);
-              console.log("[Loom Debug] Content updated in Loom");
-
-              // Final cleanup of chat message (handles both ADD_FILE and CANVAS_EDIT)
-              const cleanedMessage = cleanAllToolMarkers(fullResponse);
-              console.log(
-                "[Loom Debug] cleanedMessage length:",
-                cleanedMessage.length,
-              );
-              console.log(
-                "[Loom Debug] cleanedMessage preview:",
-                cleanedMessage.substring(0, 300),
-              );
-              console.log(
-                "[Loom Debug] cleanedMessage still has ADD_FILE?:",
-                cleanedMessage.includes("[ADD_FILE]"),
-              );
-
-              // Compute just the added lines for display
-              const diff = computeDiff(currentDocContent, editContent);
-              const addedLines = diff.lines
-                .filter((line) => line.type === "added")
-                .map((line) => line.content)
-                .join("\n");
-
-              console.log(
-                "[Loom Debug] About to update session with cleanedMessage",
-              );
-              setSessions((prevSessions) => {
-                console.log(
-                  "[Loom Debug] Inside setSessions callback, cleanedMessage:",
-                  cleanedMessage.substring(0, 100),
-                );
-                return prevSessions.map((s) =>
-                  s.id === currentSessionId
-                    ? {
-                        ...s,
-                        messages: s.messages.map((msg) =>
-                          msg.id === assistantMessage.id
-                            ? {
-                                ...msg,
-                                content:
-                                  cleanedMessage ||
-                                  "Done! I've updated the Loom for you.",
-                                loomContent: addedLines || editContent,
-                              }
-                            : msg,
-                        ),
-                      }
-                    : s,
-                );
-              });
-              console.log(
-                "[Loom Debug] setSessions called for auto-accept path",
-              );
-            } else {
-              // Queue the edit for review (new diff-based workflow)
-              console.log(
-                "[Loom Debug] Auto-accept is OFF, queuing edit for review",
-              );
-              const editContentLines = editContent.split("\n").length;
-              const originalContent = extractOriginalContent(
-                currentDocContent,
-                targetLine,
-                editContentLines,
-              );
-
-              console.log("[Loom Debug] Creating pending edit:");
-              console.log("[Loom Debug] - editContentLines:", editContentLines);
-              console.log(
-                "[Loom Debug] - originalContent length:",
-                originalContent.length,
-              );
-              console.log(
-                "[Loom Debug] - originalContent preview:",
-                originalContent.substring(0, 100),
-              );
-
-              // Add to pending edits queue
-              currentLoom.addPendingEdit(
-                targetLine,
-                originalContent,
-                editContent,
-              );
-              console.log("[Loom Debug] Pending edit added to queue");
-              console.log(
-                "[Loom Debug] Current pending edits count:",
-                currentLoom.state.pendingEdits.length + 1,
-              );
-
-              // Update chat message to indicate pending review
-              const cleanedMessage = cleanAllToolMarkers(fullResponse);
-
-              // Compute just the added lines for display
-              const diff = computeDiff(originalContent, editContent);
-              const addedLines = diff.lines
-                .filter((line) => line.type === "added")
-                .map((line) => line.content)
-                .join("\n");
-
-              setSessions((prevSessions) => {
-                return prevSessions.map((s) =>
-                  s.id === currentSessionId
-                    ? {
-                        ...s,
-                        messages: s.messages.map((msg) =>
-                          msg.id === assistantMessage.id
-                            ? {
-                                ...msg,
-                                content:
-                                  cleanedMessage ||
-                                  "I've prepared an edit for your review. Check the Loom panel to accept or reject the changes.",
-                                loomContent: addedLines || editContent,
-                              }
-                            : msg,
-                        ),
-                      }
-                    : s,
-                );
-              });
-            }
-          }
-        } // End of !handledBySurgicalEdit block
-      }
-
-      // After streaming completes, check for project creation tool
-      const projectToolResult = parseProjectToolMarkers(fullResponse);
-      if (projectToolResult.found && projectToolResult.payload) {
-        try {
-          // Create the project via API (with initial file support)
-          const response = await fetch("/api/projects", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: projectToolResult.payload.name,
-              description: projectToolResult.payload.description || "",
-              initialFile: projectToolResult.payload.initialFile,
-            }),
-          });
-
-          const data = await response.json();
-
-          if (data.success && data.project) {
-            // Refresh project list and switch to the new project
-            await refreshProjects();
-            await switchProject(data.project.id);
-
-            // Show notification
-            setProjectCreatedNotification({
-              show: true,
-              projectName: data.project.name,
-              projectId: data.project.id,
-            });
-
-            // Auto-hide notification after 5 seconds
-            setTimeout(() => {
-              setProjectCreatedNotification(null);
-            }, 5000);
-
-            // Update the message to show cleaned content
-            const cleanedContent =
-              projectToolResult.cleanedContent ||
-              `I've created the project "${data.project.name}" for you! You can find it in the project switcher.`;
-
-            setSessions((prevSessions) => {
-              return prevSessions.map((s) =>
-                s.id === currentSessionId
-                  ? {
-                      ...s,
-                      messages: s.messages.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? { ...msg, content: cleanedContent }
-                          : msg,
-                      ),
-                    }
-                  : s,
-              );
-            });
-          }
-        } catch (error) {
-          console.error("Failed to create project from AI response:", error);
-        }
-      }
-
-      // Check for ADD_FILE tool in response
-      const addFileResult = parseAddFileMarkers(fullResponse);
-      if (
-        addFileResult.found &&
-        addFileResult.payload &&
-        projectState.activeProjectId
-      ) {
-        try {
-          const fileName = addFileResult.payload.name;
-          // Determine MIME type from file extension
-          const ext = fileName.split(".").pop()?.toLowerCase() || "";
-          const mimeTypes: Record<string, string> = {
-            md: "text/markdown",
-            txt: "text/plain",
-            js: "text/javascript",
-            ts: "text/typescript",
-            jsx: "text/jsx",
-            tsx: "text/tsx",
-            py: "text/x-python",
-            json: "application/json",
-            html: "text/html",
-            css: "text/css",
-            yaml: "text/yaml",
-            yml: "text/yaml",
-          };
-          const mimeType = mimeTypes[ext] || "text/plain";
-
-          const blob = new Blob([addFileResult.payload.content], {
-            type: mimeType,
-          });
-          const file = new File([blob], fileName, { type: mimeType });
-
-          // Use uploadFile from project provider - this updates state immediately
-          const uploadedFile = await uploadFile(file);
-
-          if (uploadedFile) {
-            // Update the message to show cleaned content
-            const cleanedContent =
-              addFileResult.cleanedContent ||
-              `I've created the file "${fileName}" in your workspace.`;
-
-            setSessions((prevSessions) => {
-              return prevSessions.map((s) =>
-                s.id === currentSessionId
-                  ? {
-                      ...s,
-                      messages: s.messages.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? { ...msg, content: cleanedContent }
-                          : msg,
-                      ),
-                    }
-                  : s,
-              );
-            });
-          } else {
-            console.error("Failed to create file");
-          }
-        } catch (error) {
-          console.error("Failed to create file from AI response:", error);
-        }
-      }
+      await finalizeAssistantResponse(fullResponse, assistantMessage.id);
     } catch (error) {
       console.error("Error sending message:", error);
       const errorMessage =
@@ -1808,8 +1803,31 @@ function ChatInterfaceInner() {
             const data = trimmed.slice(6);
             try {
               const parsed = JSON.parse(data);
-              if (parsed.content) {
-                fullResponse += parsed.content;
+              const content = parsed.content;
+              if (content) {
+                fullResponse += content;
+
+                // Debug: log when we see edit markers being streamed
+                if (content.includes("[ADD_FILE]")) {
+                  console.log(
+                    "[Loom Debug] ADD_FILE marker received in stream chunk",
+                  );
+                  console.log(
+                    "[Loom Debug] Current fullResponse length:",
+                    fullResponse.length,
+                  );
+                }
+                if (content.includes("[/ADD_FILE]")) {
+                  console.log(
+                    "[Loom Debug] /ADD_FILE marker received in stream chunk",
+                  );
+                  console.log(
+                    "[Loom Debug] Full ADD_FILE block received, fullResponse length:",
+                    fullResponse.length,
+                  );
+                }
+
+                const displayContent = cleanAllToolMarkers(fullResponse);
                 setSessions((prevSessions) => {
                   return prevSessions.map((session) =>
                     session.id === currentSessionId
@@ -1817,7 +1835,7 @@ function ChatInterfaceInner() {
                           ...session,
                           messages: session.messages.map((msg) =>
                             msg.id === newAssistantMessage.id
-                              ? { ...msg, content: fullResponse }
+                              ? { ...msg, content: displayContent }
                               : msg,
                           ),
                         }
