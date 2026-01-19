@@ -76,6 +76,13 @@ import type {
   StoredMessage,
   StoredLoomDocument,
 } from "@/lib/project-types";
+import { MentionPopover, MentionChips } from "@/components/mention-popover";
+import {
+  searchDocuments,
+  type RegistryDocument,
+} from "@/lib/document-registry";
+import type { DocumentMention, MentionState } from "@/lib/mention-types";
+import { initialMentionState } from "@/lib/mention-types";
 
 interface Message {
   id: string;
@@ -308,6 +315,16 @@ function ChatInterfaceInner() {
   const [selectedModel, setSelectedModel] = useState("");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+
+  // @mention state for document context
+  const [mentionState, setMentionState] =
+    useState<MentionState>(initialMentionState);
+  const [mentionedDocuments, setMentionedDocuments] = useState<
+    DocumentMention[]
+  >([]);
+  const [filteredMentionDocs, setFilteredMentionDocs] = useState<
+    RegistryDocument[]
+  >([]);
   const [enabledModels, setEnabledModels] = useState<
     Array<{ id: string; name: string; provider: string }>
   >([]);
@@ -626,6 +643,79 @@ function ChatInterfaceInner() {
     setAttachments(attachments.filter((a) => a.id !== id));
   };
 
+  // Handle @mention input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
+    setInput(value);
+
+    // Check if we should open/update the mention popover
+    // Look backwards from cursor for @ symbol
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+
+    if (lastAtIndex !== -1) {
+      // Check if there's a space or newline between @ and cursor (if so, not a mention)
+      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+      const hasBreak = /[\s\n]/.test(textAfterAt);
+
+      if (!hasBreak) {
+        // We're in a mention context
+        const query = textAfterAt;
+        const docs = searchDocuments(query);
+        setFilteredMentionDocs(docs);
+        setMentionState({
+          isOpen: true,
+          query,
+          selectedIndex: 0,
+          triggerIndex: lastAtIndex,
+        });
+        return;
+      }
+    }
+
+    // Close mention popover if we're not in a mention context
+    if (mentionState.isOpen) {
+      setMentionState(initialMentionState);
+    }
+  };
+
+  // Handle selecting a document from the mention popover
+  const handleSelectMention = (doc: RegistryDocument) => {
+    // Add to mentioned documents if not already added
+    if (!mentionedDocuments.find((d) => d.id === doc.id)) {
+      setMentionedDocuments([
+        ...mentionedDocuments,
+        { id: doc.id, title: doc.title, content: doc.content },
+      ]);
+    }
+
+    // Remove the @query from input
+    const beforeAt = input.slice(0, mentionState.triggerIndex);
+    const afterQuery = input.slice(
+      mentionState.triggerIndex + 1 + mentionState.query.length,
+    );
+    setInput(beforeAt + afterQuery);
+
+    // Close popover
+    setMentionState(initialMentionState);
+
+    // Refocus textarea
+    textareaRef.current?.focus();
+  };
+
+  // Handle removing a mentioned document
+  const handleRemoveMention = (id: string) => {
+    setMentionedDocuments(mentionedDocuments.filter((d) => d.id !== id));
+  };
+
+  // Get popover position (simple approach - position above textarea)
+  const getMentionPopoverPosition = () => {
+    if (!textareaRef.current) return { top: 0, left: 0 };
+    // Position above the textarea
+    return { top: -10, left: 0 };
+  };
+
   const handleSendMessage = async () => {
     if ((!input.trim() && attachments.length === 0) || isLoading) return;
 
@@ -739,9 +829,18 @@ function ChatInterfaceInner() {
             customEndpointApiKey: clientKeys.customEndpointApiKey,
           },
           ...loomPayload,
+          // Include mentioned documents for context
+          mentionedDocuments: mentionedDocuments.map((d) => ({
+            id: d.id,
+            title: d.title,
+            content: d.content,
+          })),
         }),
         signal: abortControllerRef.current.signal,
       });
+
+      // Clear mentioned documents after sending
+      setMentionedDocuments([]);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1474,6 +1573,42 @@ function ChatInterfaceInner() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle mention popover navigation
+    if (mentionState.isOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionState((prev) => ({
+          ...prev,
+          selectedIndex: Math.min(
+            prev.selectedIndex + 1,
+            filteredMentionDocs.length - 1,
+          ),
+        }));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionState((prev) => ({
+          ...prev,
+          selectedIndex: Math.max(prev.selectedIndex - 1, 0),
+        }));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (filteredMentionDocs[mentionState.selectedIndex]) {
+          handleSelectMention(filteredMentionDocs[mentionState.selectedIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionState(initialMentionState);
+        return;
+      }
+    }
+
+    // Normal enter to send
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -2277,17 +2412,40 @@ function ChatInterfaceInner() {
                       onRemoveFile={handleRemoveFile}
                       disabled={isLoading}
                     />
+                    {/* Mentioned documents chips */}
+                    <MentionChips
+                      mentions={mentionedDocuments}
+                      onRemove={handleRemoveMention}
+                      disabled={isLoading}
+                    />
                     <div className="flex gap-2">
-                      <div className="flex-1">
+                      <div className="relative flex-1">
                         <Textarea
                           ref={textareaRef}
                           value={input}
-                          onChange={(e) => setInput(e.target.value)}
+                          onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
-                          placeholder="Message Continuum..."
+                          placeholder="Message Continuum... (type @ to mention a document)"
                           className="min-h-[50px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
                           disabled={isLoading}
                         />
+                        {/* Mention popover */}
+                        {mentionState.isOpen && (
+                          <MentionPopover
+                            documents={filteredMentionDocs}
+                            selectedIndex={mentionState.selectedIndex}
+                            onSelect={handleSelectMention}
+                            onClose={() => setMentionState(initialMentionState)}
+                            position={{
+                              top:
+                                -Math.min(
+                                  filteredMentionDocs.length * 50 + 80,
+                                  300,
+                                ) - 10,
+                              left: 0,
+                            }}
+                          />
+                        )}
                       </div>
                       {isLoading ? (
                         <Button
@@ -2536,17 +2694,40 @@ function ChatInterfaceInner() {
                       onRemoveFile={handleRemoveFile}
                       disabled={isLoading}
                     />
+                    {/* Mentioned documents chips */}
+                    <MentionChips
+                      mentions={mentionedDocuments}
+                      onRemove={handleRemoveMention}
+                      disabled={isLoading}
+                    />
                     <div className="flex gap-3">
-                      <div className="flex-1">
+                      <div className="relative flex-1">
                         <Textarea
                           ref={textareaRef}
                           value={input}
-                          onChange={(e) => setInput(e.target.value)}
+                          onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
-                          placeholder="Message Continuum..."
+                          placeholder="Message Continuum... (type @ to mention a document)"
                           className="min-h-[60px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
                           disabled={isLoading}
                         />
+                        {/* Mention popover */}
+                        {mentionState.isOpen && (
+                          <MentionPopover
+                            documents={filteredMentionDocs}
+                            selectedIndex={mentionState.selectedIndex}
+                            onSelect={handleSelectMention}
+                            onClose={() => setMentionState(initialMentionState)}
+                            position={{
+                              top:
+                                -Math.min(
+                                  filteredMentionDocs.length * 50 + 80,
+                                  300,
+                                ) - 10,
+                              left: 0,
+                            }}
+                          />
+                        )}
                       </div>
                       {isLoading ? (
                         <Button

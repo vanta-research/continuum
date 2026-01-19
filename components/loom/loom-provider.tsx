@@ -17,6 +17,7 @@ import type {
   ModifiedBy,
 } from "@/lib/loom-types";
 import { applyPendingEdit } from "@/lib/diff-utils";
+import { addOrUpdateDocument } from "@/lib/document-registry";
 
 const PANE_WIDTH_STORAGE_KEY = "loom-pane-width";
 const AUTO_ACCEPT_STORAGE_KEY = "loom-auto-accept-edits";
@@ -507,6 +508,12 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
         lastModifiedBy: state.document.lastModifiedBy,
       };
       localStorage.setItem(LOOM_DOCUMENT_STORAGE_KEY, JSON.stringify(docData));
+
+      // Also update the document registry for @mention feature
+      // Only sync if document has meaningful content (not empty)
+      if (state.document.content.trim().length > 0) {
+        addOrUpdateDocument(state.document);
+      }
     } else {
       // Clear saved document when document is removed
       localStorage.removeItem(LOOM_DOCUMENT_STORAGE_KEY);
