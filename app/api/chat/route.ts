@@ -1001,7 +1001,7 @@ export async function POST(request: NextRequest) {
 
     // Load user's custom system prompt from settings
     const appSettings = loadSettings();
-    
+
     // Start with the user's custom instructions (if any), otherwise empty
     // The built-in "Atom" and "Loux" personas are no longer forced on users
     let systemPrompt = appSettings.customSystemPrompt || "";
@@ -1053,7 +1053,7 @@ export async function POST(request: NextRequest) {
     console.log("[Chat API] Routing model:", model);
 
     // Parse provider prefix from model string (format: "provider:modelId")
-    const [provider, modelId] = model.includes(":") 
+    const [provider, modelId] = model.includes(":")
       ? [model.split(":")[0], model.split(":").slice(1).join(":")]
       : [model, undefined];
 
@@ -1104,9 +1104,18 @@ export async function POST(request: NextRequest) {
       streamBody = await streamMistralResponse(messages, clientKeys);
     } else if (provider === "llamacpp") {
       // Explicit llama.cpp model selection - bypass auto-detection
-      console.log("[Chat API] -> Using llama.cpp server for model:", modelId || model);
+      console.log(
+        "[Chat API] -> Using llama.cpp server for model:",
+        modelId || model,
+      );
       streamBody = await streamLlamaResponse(messages);
       (streamBody as any).__serverType = "llamacpp";
+    } else if (provider === "ollama") {
+      // Explicit Ollama model selection
+      const ollamaModelId = modelId || "llama3.1:8b";
+      console.log("[Chat API] -> Using Ollama for model:", ollamaModelId);
+      streamBody = await streamOllamaResponse(messages, ollamaModelId);
+      (streamBody as any).__serverType = "ollama";
     } else {
       // Default: Local AI (atom) - works with both Ollama and llama.cpp
       console.log(

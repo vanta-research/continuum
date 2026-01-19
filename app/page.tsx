@@ -321,8 +321,17 @@ function ChatInterfaceInner() {
   >([]);
   const [loadingLlamacppModels, setLoadingLlamacppModels] = useState(false);
 
-  // Check if user has configured any models (including llama.cpp models when server is running)
-  const hasConfiguredModels = enabledModels.length > 0 || llamacppModels.length > 0;
+  // Ollama state
+  const [ollamaModels, setOllamaModels] = useState<
+    Array<{ id: string; name: string; provider: string }>
+  >([]);
+  const [loadingOllamaModels, setLoadingOllamaModels] = useState(true);
+
+  // Check if user has configured any models (including local models)
+  const hasConfiguredModels =
+    enabledModels.length > 0 ||
+    llamacppModels.length > 0 ||
+    ollamaModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -463,6 +472,40 @@ function ChatInterfaceInner() {
     }
   }, [selectedModel]);
 
+  // Fetch Ollama models
+  const fetchOllamaModels = useCallback(async () => {
+    setLoadingOllamaModels(true);
+    try {
+      const response = await fetch("/api/models/ollama");
+      const data = await response.json();
+
+      if (data.success && data.models) {
+        setOllamaModels(data.models);
+
+        // If no model is currently selected and Ollama has models, auto-select the first one
+        if (!selectedModel && data.models.length > 0) {
+          setSelectedModel(`ollama:${data.models[0].id}`);
+        }
+      } else {
+        setOllamaModels([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch Ollama models:", error);
+      setOllamaModels([]);
+    } finally {
+      setLoadingOllamaModels(false);
+    }
+  }, [selectedModel]);
+
+  // Fetch Ollama models on mount and periodically check for changes
+  useEffect(() => {
+    fetchOllamaModels();
+
+    // Check for Ollama models every 30 seconds (in case Ollama starts/stops)
+    const interval = setInterval(fetchOllamaModels, 30000);
+    return () => clearInterval(interval);
+  }, [fetchOllamaModels]);
+
   // Watch for llama.cpp server status changes
   useEffect(() => {
     if (localServer.status.status === "running") {
@@ -482,7 +525,12 @@ function ChatInterfaceInner() {
         }
       }
     }
-  }, [localServer.status.status, fetchLlamacppModels, selectedModel, enabledModels]);
+  }, [
+    localServer.status.status,
+    fetchLlamacppModels,
+    selectedModel,
+    enabledModels,
+  ]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
@@ -1801,15 +1849,50 @@ function ChatInterfaceInner() {
                     </SelectTrigger>
                     <SelectContent>
                       {/* Loading state */}
-                      {(loadingEnabledModels || loadingLlamacppModels) && (
+                      {(loadingEnabledModels ||
+                        loadingLlamacppModels ||
+                        loadingOllamaModels) && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">
                           Loading models...
                         </div>
                       )}
 
+                      {/* Ollama models */}
+                      {ollamaModels.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                            Ollama
+                          </div>
+                          {ollamaModels.map((model) => {
+                            const modelValue = `ollama:${model.id}`;
+                            const isDefault = modelValue === defaultModel;
+                            return (
+                              <SelectItem
+                                key={`ollama-${model.id}`}
+                                value={modelValue}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {isDefault && (
+                                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                  )}
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                    ollama
+                                  </span>
+                                  <span>{model.name}</span>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </>
+                      )}
+
                       {/* llama.cpp Local AI models (shown when server is running) */}
                       {llamacppModels.length > 0 && (
                         <>
+                          {ollamaModels.length > 0 && (
+                            <div className="my-1 border-t border-border/50" />
+                          )}
                           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                             Local AI (llama.cpp)
@@ -1818,7 +1901,10 @@ function ChatInterfaceInner() {
                             const modelValue = `llamacpp:${model.id}`;
                             const isDefault = modelValue === defaultModel;
                             return (
-                              <SelectItem key={`llamacpp-${model.id}`} value={modelValue}>
+                              <SelectItem
+                                key={`llamacpp-${model.id}`}
+                                value={modelValue}
+                              >
                                 <div className="flex items-center gap-2">
                                   {isDefault && (
                                     <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
@@ -1831,18 +1917,19 @@ function ChatInterfaceInner() {
                               </SelectItem>
                             );
                           })}
-                          {enabledModels.length > 0 && (
-                            <div className="my-1 border-t border-border/50" />
-                          )}
                         </>
                       )}
 
                       {/* Cloud provider section header (only show if we have both local and cloud models) */}
-                      {llamacppModels.length > 0 && enabledModels.length > 0 && (
-                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                          Cloud Providers
-                        </div>
-                      )}
+                      {(ollamaModels.length > 0 || llamacppModels.length > 0) &&
+                        enabledModels.length > 0 && (
+                          <>
+                            <div className="my-1 border-t border-border/50" />
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                              Cloud Providers
+                            </div>
+                          </>
+                        )}
 
                       {/* User-configured models from settings */}
                       {enabledModels.map((model) => {
