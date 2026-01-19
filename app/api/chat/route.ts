@@ -114,6 +114,12 @@ interface LoomContext {
   lineCount: number;
 }
 
+interface MentionedDocument {
+  id: string;
+  title: string;
+  content: string;
+}
+
 const atomSystemPrompt = `The assistant is Atom. An intelligent cognitive partner designed by VANTA Research in Portland, Oregon.
 
 VANTA Research is an AI research organization that studies cognitive configuration in foundation models.
@@ -318,6 +324,43 @@ Done! character-outline.md has been saved to your workspace."
 - Do NOT just display content and say "file created" - USE THE MARKERS
 - If you don't use [ADD_FILE]...[/ADD_FILE], the file will NOT be saved
 `;
+}
+
+/**
+ * Build context from @mentioned documents
+ * These are documents the user explicitly referenced using @mention
+ */
+function buildMentionedDocumentsContext(docs: MentionedDocument[]): string {
+  if (!docs || docs.length === 0) return "";
+
+  const MAX_DOC_SIZE = 10000; // Truncate large documents
+
+  let context = `\n\n## Referenced Documents\nThe user has referenced the following document(s) for context:\n`;
+
+  for (const doc of docs) {
+    let content = doc.content;
+
+    // Truncate very large documents
+    if (content.length > MAX_DOC_SIZE) {
+      const lines = content.split("\n");
+      const totalLines = lines.length;
+      const previewLines = 50;
+      const endLines = 20;
+
+      if (totalLines > previewLines + endLines) {
+        const startSection = lines.slice(0, previewLines).join("\n");
+        const endSection = lines.slice(-endLines).join("\n");
+        const omittedCount = totalLines - previewLines - endLines;
+        content = `${startSection}\n\n[... ${omittedCount} lines omitted for brevity ...]\n\n${endSection}`;
+      }
+    }
+
+    context += `\n### ${doc.title}\n\`\`\`\n${content}\n\`\`\`\n`;
+  }
+
+  context += `\nUse these documents as context when responding to the user's request. You can reference specific content from these documents in your response.\n`;
+
+  return context;
 }
 
 // Thresholds for switching to surgical edit mode
@@ -877,6 +920,7 @@ export async function POST(request: NextRequest) {
       webSearchEnabled = false,
       loomEnabled = false,
       loomContext,
+      mentionedDocuments = [],
       history = [],
       // Client-provided API keys (stored in browser localStorage)
       apiKeys = {},
@@ -1001,7 +1045,7 @@ export async function POST(request: NextRequest) {
 
     // Load user's custom system prompt from settings
     const appSettings = loadSettings();
-    
+
     // Start with the user's custom instructions (if any), otherwise empty
     // The built-in "Atom" and "Loux" personas are no longer forced on users
     let systemPrompt = appSettings.customSystemPrompt || "";
@@ -1013,6 +1057,14 @@ export async function POST(request: NextRequest) {
     } else {
       // Only add project tool instructions (ADD_FILE) when Loom is NOT active
       systemPrompt += buildProjectToolInstructions();
+    }
+
+    // Add @mentioned documents context (works regardless of Loom mode)
+    if (mentionedDocuments && mentionedDocuments.length > 0) {
+      systemPrompt += buildMentionedDocumentsContext(mentionedDocuments);
+      console.log(
+        `[Chat API] Including ${mentionedDocuments.length} mentioned document(s) in context`,
+      );
     }
 
     // Build messages array with system prompt, history, and current message
@@ -1053,7 +1105,7 @@ export async function POST(request: NextRequest) {
     console.log("[Chat API] Routing model:", model);
 
     // Parse provider prefix from model string (format: "provider:modelId")
-    const [provider, modelId] = model.includes(":") 
+    const [provider, modelId] = model.includes(":")
       ? [model.split(":")[0], model.split(":").slice(1).join(":")]
       : [model, undefined];
 
@@ -1104,9 +1156,18 @@ export async function POST(request: NextRequest) {
       streamBody = await streamMistralResponse(messages, clientKeys);
     } else if (provider === "llamacpp") {
       // Explicit llama.cpp model selection - bypass auto-detection
-      console.log("[Chat API] -> Using llama.cpp server for model:", modelId || model);
+      console.log(
+        "[Chat API] -> Using llama.cpp server for model:",
+        modelId || model,
+      );
       streamBody = await streamLlamaResponse(messages);
       (streamBody as any).__serverType = "llamacpp";
+    } else if (provider === "ollama") {
+      // Explicit Ollama model selection
+      const ollamaModelId = modelId || "llama3.1:8b";
+      console.log("[Chat API] -> Using Ollama for model:", ollamaModelId);
+      streamBody = await streamOllamaResponse(messages, ollamaModelId);
+      (streamBody as any).__serverType = "ollama";
     } else {
       // Default: Local AI (atom) - works with both Ollama and llama.cpp
       console.log(

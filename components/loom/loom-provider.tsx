@@ -17,6 +17,7 @@ import type {
   ModifiedBy,
 } from "@/lib/loom-types";
 import { applyPendingEdit } from "@/lib/diff-utils";
+import { addOrUpdateDocument } from "@/lib/document-registry";
 
 const PANE_WIDTH_STORAGE_KEY = "loom-pane-width";
 const AUTO_ACCEPT_STORAGE_KEY = "loom-auto-accept-edits";
@@ -464,17 +465,27 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
             "[LoomProvider] Restoring saved document, content length:",
             docData.content.length,
           );
+          const restoredDoc = {
+            id: docData.id || `doc-${Date.now()}`,
+            title: docData.title || "Untitled Document",
+            content: docData.content,
+            createdAt: new Date(docData.createdAt || Date.now()),
+            updatedAt: new Date(docData.updatedAt || Date.now()),
+            lastModifiedBy: docData.lastModifiedBy || "user",
+          };
           dispatch({
             type: "SET_DOCUMENT",
-            payload: {
-              id: docData.id || `doc-${Date.now()}`,
-              title: docData.title || "Untitled Document",
-              content: docData.content,
-              createdAt: new Date(docData.createdAt || Date.now()),
-              updatedAt: new Date(docData.updatedAt || Date.now()),
-              lastModifiedBy: docData.lastModifiedBy || "user",
-            },
+            payload: restoredDoc,
           });
+
+          // Immediately sync to document registry for @mention feature
+          if (restoredDoc.content.trim().length > 0) {
+            addOrUpdateDocument(restoredDoc as LoomDocument);
+            console.log(
+              "[LoomProvider] Synced restored document to registry:",
+              restoredDoc.title,
+            );
+          }
         }
       } catch (e) {
         console.error("[LoomProvider] Failed to restore document:", e);
@@ -507,6 +518,12 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
         lastModifiedBy: state.document.lastModifiedBy,
       };
       localStorage.setItem(LOOM_DOCUMENT_STORAGE_KEY, JSON.stringify(docData));
+
+      // Also update the document registry for @mention feature
+      // Only sync if document has meaningful content (not empty)
+      if (state.document.content.trim().length > 0) {
+        addOrUpdateDocument(state.document);
+      }
     } else {
       // Clear saved document when document is removed
       localStorage.removeItem(LOOM_DOCUMENT_STORAGE_KEY);

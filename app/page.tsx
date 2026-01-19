@@ -76,6 +76,13 @@ import type {
   StoredMessage,
   StoredLoomDocument,
 } from "@/lib/project-types";
+import { MentionPopover, MentionChips } from "@/components/mention-popover";
+import {
+  searchDocuments,
+  type RegistryDocument,
+} from "@/lib/document-registry";
+import type { DocumentMention, MentionState } from "@/lib/mention-types";
+import { initialMentionState } from "@/lib/mention-types";
 
 interface Message {
   id: string;
@@ -308,6 +315,16 @@ function ChatInterfaceInner() {
   const [selectedModel, setSelectedModel] = useState("");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+
+  // @mention state for document context
+  const [mentionState, setMentionState] =
+    useState<MentionState>(initialMentionState);
+  const [mentionedDocuments, setMentionedDocuments] = useState<
+    DocumentMention[]
+  >([]);
+  const [filteredMentionDocs, setFilteredMentionDocs] = useState<
+    RegistryDocument[]
+  >([]);
   const [enabledModels, setEnabledModels] = useState<
     Array<{ id: string; name: string; provider: string }>
   >([]);
@@ -321,8 +338,17 @@ function ChatInterfaceInner() {
   >([]);
   const [loadingLlamacppModels, setLoadingLlamacppModels] = useState(false);
 
-  // Check if user has configured any models (including llama.cpp models when server is running)
-  const hasConfiguredModels = enabledModels.length > 0 || llamacppModels.length > 0;
+  // Ollama state
+  const [ollamaModels, setOllamaModels] = useState<
+    Array<{ id: string; name: string; provider: string }>
+  >([]);
+  const [loadingOllamaModels, setLoadingOllamaModels] = useState(true);
+
+  // Check if user has configured any models (including local models)
+  const hasConfiguredModels =
+    enabledModels.length > 0 ||
+    llamacppModels.length > 0 ||
+    ollamaModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -463,6 +489,40 @@ function ChatInterfaceInner() {
     }
   }, [selectedModel]);
 
+  // Fetch Ollama models
+  const fetchOllamaModels = useCallback(async () => {
+    setLoadingOllamaModels(true);
+    try {
+      const response = await fetch("/api/models/ollama");
+      const data = await response.json();
+
+      if (data.success && data.models) {
+        setOllamaModels(data.models);
+
+        // If no model is currently selected and Ollama has models, auto-select the first one
+        if (!selectedModel && data.models.length > 0) {
+          setSelectedModel(`ollama:${data.models[0].id}`);
+        }
+      } else {
+        setOllamaModels([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch Ollama models:", error);
+      setOllamaModels([]);
+    } finally {
+      setLoadingOllamaModels(false);
+    }
+  }, [selectedModel]);
+
+  // Fetch Ollama models on mount and periodically check for changes
+  useEffect(() => {
+    fetchOllamaModels();
+
+    // Check for Ollama models every 30 seconds (in case Ollama starts/stops)
+    const interval = setInterval(fetchOllamaModels, 30000);
+    return () => clearInterval(interval);
+  }, [fetchOllamaModels]);
+
   // Watch for llama.cpp server status changes
   useEffect(() => {
     if (localServer.status.status === "running") {
@@ -482,7 +542,12 @@ function ChatInterfaceInner() {
         }
       }
     }
-  }, [localServer.status.status, fetchLlamacppModels, selectedModel, enabledModels]);
+  }, [
+    localServer.status.status,
+    fetchLlamacppModels,
+    selectedModel,
+    enabledModels,
+  ]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
@@ -576,6 +641,79 @@ function ChatInterfaceInner() {
 
   const handleRemoveFile = (id: string) => {
     setAttachments(attachments.filter((a) => a.id !== id));
+  };
+
+  // Handle @mention input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
+    setInput(value);
+
+    // Check if we should open/update the mention popover
+    // Look backwards from cursor for @ symbol
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+
+    if (lastAtIndex !== -1) {
+      // Check if there's a space or newline between @ and cursor (if so, not a mention)
+      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+      const hasBreak = /[\s\n]/.test(textAfterAt);
+
+      if (!hasBreak) {
+        // We're in a mention context
+        const query = textAfterAt;
+        const docs = searchDocuments(query);
+        setFilteredMentionDocs(docs);
+        setMentionState({
+          isOpen: true,
+          query,
+          selectedIndex: 0,
+          triggerIndex: lastAtIndex,
+        });
+        return;
+      }
+    }
+
+    // Close mention popover if we're not in a mention context
+    if (mentionState.isOpen) {
+      setMentionState(initialMentionState);
+    }
+  };
+
+  // Handle selecting a document from the mention popover
+  const handleSelectMention = (doc: RegistryDocument) => {
+    // Add to mentioned documents if not already added
+    if (!mentionedDocuments.find((d) => d.id === doc.id)) {
+      setMentionedDocuments([
+        ...mentionedDocuments,
+        { id: doc.id, title: doc.title, content: doc.content },
+      ]);
+    }
+
+    // Remove the @query from input
+    const beforeAt = input.slice(0, mentionState.triggerIndex);
+    const afterQuery = input.slice(
+      mentionState.triggerIndex + 1 + mentionState.query.length,
+    );
+    setInput(beforeAt + afterQuery);
+
+    // Close popover
+    setMentionState(initialMentionState);
+
+    // Refocus textarea
+    textareaRef.current?.focus();
+  };
+
+  // Handle removing a mentioned document
+  const handleRemoveMention = (id: string) => {
+    setMentionedDocuments(mentionedDocuments.filter((d) => d.id !== id));
+  };
+
+  // Get popover position (simple approach - position above textarea)
+  const getMentionPopoverPosition = () => {
+    if (!textareaRef.current) return { top: 0, left: 0 };
+    // Position above the textarea
+    return { top: -10, left: 0 };
   };
 
   const handleSendMessage = async () => {
@@ -691,9 +829,18 @@ function ChatInterfaceInner() {
             customEndpointApiKey: clientKeys.customEndpointApiKey,
           },
           ...loomPayload,
+          // Include mentioned documents for context
+          mentionedDocuments: mentionedDocuments.map((d) => ({
+            id: d.id,
+            title: d.title,
+            content: d.content,
+          })),
         }),
         signal: abortControllerRef.current.signal,
       });
+
+      // Clear mentioned documents after sending
+      setMentionedDocuments([]);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -709,7 +856,7 @@ function ChatInterfaceInner() {
 
       // Helper to clean loom edit markers from text for display
       const cleanLoomMarkers = (text: string): string => {
-        // Remove complete loom edit blocks (model still uses CANVAS_EDIT markers)
+        // Remove complete loom edit blocks (legacy CANVAS_EDIT markers)
         // Also handles markdown formatting (---) around the markers
         let cleaned = text.replace(
           /---\s*\[CANVAS_EDIT_START:\d+\]\s*---[\s\S]*?---\s*\[CANVAS_EDIT_END\]\s*---/g,
@@ -719,22 +866,38 @@ function ChatInterfaceInner() {
           /\[CANVAS_EDIT_START:\d+\]\s*(?:---\s*)?[\s\S]*?(?:\s*---\s*)?\[CANVAS_EDIT_END\]/g,
           "",
         );
-        // Remove partial/incomplete start markers (in case we're mid-stream)
+        // Remove partial/incomplete CANVAS_EDIT markers (in case we're mid-stream)
         cleaned = cleaned.replace(/\[CANVAS_EDIT_START:\d+\][\s\S]*$/, "");
-        // Remove any trailing partial marker that might be forming
         cleaned = cleaned.replace(/\[CANVAS_EDIT_START[^\]]*$/, "");
         cleaned = cleaned.replace(/\[CANVAS[^\]]*$/, "");
-        cleaned = cleaned.replace(/\[[^\]]*$/, ""); // Any incomplete bracket
+        // NOTE: Removed the aggressive /\[[^\]]*$/ pattern as it was breaking ADD_FILE markers
         return cleaned.trim();
       };
 
       // Helper to clean all tool markers from text for display
       const cleanAllToolMarkers = (text: string): string => {
+        const hasStart = text.includes("[ADD_FILE]");
+        const hasEnd = text.includes("[/ADD_FILE]");
         console.log(
-          "[cleanAllToolMarkers] Input has ADD_FILE?:",
-          text.includes("[ADD_FILE]"),
+          "[cleanAllToolMarkers] Input has [ADD_FILE]:",
+          hasStart,
+          "has [/ADD_FILE]:",
+          hasEnd,
+          "length:",
+          text.length,
         );
-        console.log("[cleanAllToolMarkers] Input length:", text.length);
+
+        // If we have both markers, log a preview
+        if (hasStart && hasEnd) {
+          const startIdx = text.indexOf("[ADD_FILE]");
+          const endIdx = text.indexOf("[/ADD_FILE]");
+          console.log(
+            "[cleanAllToolMarkers] Marker positions - start:",
+            startIdx,
+            "end:",
+            endIdx,
+          );
+        }
 
         let cleaned = cleanLoomMarkers(text);
         console.log(
@@ -752,6 +915,8 @@ function ChatInterfaceInner() {
         console.log(
           "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
           cleaned.includes("[ADD_FILE]"),
+          "has [/ADD_FILE]:",
+          cleaned.includes("[/ADD_FILE]"),
         );
         console.log("[cleanAllToolMarkers] Final length:", cleaned.length);
 
@@ -1233,7 +1398,7 @@ function ChatInterfaceInner() {
               );
 
               // Update chat message to indicate pending review
-              const cleanedMessage = cleanLoomMarkers(fullResponse);
+              const cleanedMessage = cleanAllToolMarkers(fullResponse);
 
               // Compute just the added lines for display
               const diff = computeDiff(originalContent, editContent);
@@ -1426,6 +1591,42 @@ function ChatInterfaceInner() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle mention popover navigation
+    if (mentionState.isOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionState((prev) => ({
+          ...prev,
+          selectedIndex: Math.min(
+            prev.selectedIndex + 1,
+            filteredMentionDocs.length - 1,
+          ),
+        }));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionState((prev) => ({
+          ...prev,
+          selectedIndex: Math.max(prev.selectedIndex - 1, 0),
+        }));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (filteredMentionDocs[mentionState.selectedIndex]) {
+          handleSelectMention(filteredMentionDocs[mentionState.selectedIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionState(initialMentionState);
+        return;
+      }
+    }
+
+    // Normal enter to send
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -1801,15 +2002,50 @@ function ChatInterfaceInner() {
                     </SelectTrigger>
                     <SelectContent>
                       {/* Loading state */}
-                      {(loadingEnabledModels || loadingLlamacppModels) && (
+                      {(loadingEnabledModels ||
+                        loadingLlamacppModels ||
+                        loadingOllamaModels) && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">
                           Loading models...
                         </div>
                       )}
 
+                      {/* Ollama models */}
+                      {ollamaModels.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                            Ollama
+                          </div>
+                          {ollamaModels.map((model) => {
+                            const modelValue = `ollama:${model.id}`;
+                            const isDefault = modelValue === defaultModel;
+                            return (
+                              <SelectItem
+                                key={`ollama-${model.id}`}
+                                value={modelValue}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {isDefault && (
+                                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                  )}
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                    ollama
+                                  </span>
+                                  <span>{model.name}</span>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </>
+                      )}
+
                       {/* llama.cpp Local AI models (shown when server is running) */}
                       {llamacppModels.length > 0 && (
                         <>
+                          {ollamaModels.length > 0 && (
+                            <div className="my-1 border-t border-border/50" />
+                          )}
                           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                             Local AI (llama.cpp)
@@ -1818,7 +2054,10 @@ function ChatInterfaceInner() {
                             const modelValue = `llamacpp:${model.id}`;
                             const isDefault = modelValue === defaultModel;
                             return (
-                              <SelectItem key={`llamacpp-${model.id}`} value={modelValue}>
+                              <SelectItem
+                                key={`llamacpp-${model.id}`}
+                                value={modelValue}
+                              >
                                 <div className="flex items-center gap-2">
                                   {isDefault && (
                                     <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
@@ -1831,18 +2070,19 @@ function ChatInterfaceInner() {
                               </SelectItem>
                             );
                           })}
-                          {enabledModels.length > 0 && (
-                            <div className="my-1 border-t border-border/50" />
-                          )}
                         </>
                       )}
 
                       {/* Cloud provider section header (only show if we have both local and cloud models) */}
-                      {llamacppModels.length > 0 && enabledModels.length > 0 && (
-                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                          Cloud Providers
-                        </div>
-                      )}
+                      {(ollamaModels.length > 0 || llamacppModels.length > 0) &&
+                        enabledModels.length > 0 && (
+                          <>
+                            <div className="my-1 border-t border-border/50" />
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                              Cloud Providers
+                            </div>
+                          </>
+                        )}
 
                       {/* User-configured models from settings */}
                       {enabledModels.map((model) => {
@@ -2190,17 +2430,40 @@ function ChatInterfaceInner() {
                       onRemoveFile={handleRemoveFile}
                       disabled={isLoading}
                     />
+                    {/* Mentioned documents chips */}
+                    <MentionChips
+                      mentions={mentionedDocuments}
+                      onRemove={handleRemoveMention}
+                      disabled={isLoading}
+                    />
                     <div className="flex gap-2">
-                      <div className="flex-1">
+                      <div className="relative flex-1">
                         <Textarea
                           ref={textareaRef}
                           value={input}
-                          onChange={(e) => setInput(e.target.value)}
+                          onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
-                          placeholder="Message Continuum..."
+                          placeholder="Message Continuum... (type @ to mention a document)"
                           className="min-h-[50px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
                           disabled={isLoading}
                         />
+                        {/* Mention popover */}
+                        {mentionState.isOpen && (
+                          <MentionPopover
+                            documents={filteredMentionDocs}
+                            selectedIndex={mentionState.selectedIndex}
+                            onSelect={handleSelectMention}
+                            onClose={() => setMentionState(initialMentionState)}
+                            position={{
+                              top:
+                                -Math.min(
+                                  filteredMentionDocs.length * 50 + 80,
+                                  300,
+                                ) - 10,
+                              left: 0,
+                            }}
+                          />
+                        )}
                       </div>
                       {isLoading ? (
                         <Button
@@ -2449,17 +2712,40 @@ function ChatInterfaceInner() {
                       onRemoveFile={handleRemoveFile}
                       disabled={isLoading}
                     />
+                    {/* Mentioned documents chips */}
+                    <MentionChips
+                      mentions={mentionedDocuments}
+                      onRemove={handleRemoveMention}
+                      disabled={isLoading}
+                    />
                     <div className="flex gap-3">
-                      <div className="flex-1">
+                      <div className="relative flex-1">
                         <Textarea
                           ref={textareaRef}
                           value={input}
-                          onChange={(e) => setInput(e.target.value)}
+                          onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
-                          placeholder="Message Continuum..."
+                          placeholder="Message Continuum... (type @ to mention a document)"
                           className="min-h-[60px] resize-none bg-background/60 backdrop-blur-md border-border/30 focus:border-primary/50 transition-colors"
                           disabled={isLoading}
                         />
+                        {/* Mention popover */}
+                        {mentionState.isOpen && (
+                          <MentionPopover
+                            documents={filteredMentionDocs}
+                            selectedIndex={mentionState.selectedIndex}
+                            onSelect={handleSelectMention}
+                            onClose={() => setMentionState(initialMentionState)}
+                            position={{
+                              top:
+                                -Math.min(
+                                  filteredMentionDocs.length * 50 + 80,
+                                  300,
+                                ) - 10,
+                              left: 0,
+                            }}
+                          />
+                        )}
                       </div>
                       {isLoading ? (
                         <Button
