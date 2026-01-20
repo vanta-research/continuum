@@ -146,7 +146,7 @@ export function searchDocuments(query: string): RegistryDocument[] {
   return registry.documents.filter(
     (doc) =>
       doc.title.toLowerCase().includes(lowerQuery) ||
-      doc.preview.toLowerCase().includes(lowerQuery)
+      doc.preview.toLowerCase().includes(lowerQuery),
   );
 }
 
@@ -171,4 +171,50 @@ export function getAllDocuments(): RegistryDocument[] {
  */
 export function clearRegistry(): void {
   saveRegistry({ documents: [], version: 1 });
+}
+
+/**
+ * Remove all non-file-based documents from registry
+ * File-based documents have IDs starting with "file-"
+ */
+export function cleanupNonFileDocuments(): void {
+  const registry = getDocumentRegistry();
+  const originalCount = registry.documents.length;
+  registry.documents = registry.documents.filter((d) =>
+    d.id.startsWith("file-"),
+  );
+
+  if (registry.documents.length !== originalCount) {
+    console.log(
+      `[DocumentRegistry] Cleaned up ${originalCount - registry.documents.length} non-file documents`,
+    );
+    saveRegistry(registry);
+  }
+}
+
+/**
+ * Sync registry with actual files from the project
+ * Removes any registry entries that no longer exist as files
+ * @param validFileIds - Set of file IDs that actually exist in the project
+ */
+export function syncRegistryWithFiles(validFileIds: Set<string>): void {
+  const registry = getDocumentRegistry();
+  const originalCount = registry.documents.length;
+
+  // Keep only documents whose file ID exists in the valid set
+  // Registry doc IDs are "file-{fileId}", so we extract the fileId part
+  registry.documents = registry.documents.filter((doc) => {
+    if (!doc.id.startsWith("file-")) {
+      return false; // Remove non-file documents
+    }
+    const fileId = doc.id.replace("file-", "");
+    return validFileIds.has(fileId);
+  });
+
+  if (registry.documents.length !== originalCount) {
+    console.log(
+      `[DocumentRegistry] Synced registry: removed ${originalCount - registry.documents.length} stale documents`,
+    );
+    saveRegistry(registry);
+  }
 }

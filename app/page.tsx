@@ -77,10 +77,7 @@ import type {
   StoredLoomDocument,
 } from "@/lib/project-types";
 import { MentionPopover, MentionChips } from "@/components/mention-popover";
-import {
-  searchDocuments,
-  type RegistryDocument,
-} from "@/lib/document-registry";
+import { type RegistryDocument } from "@/lib/document-registry";
 import type { DocumentMention, MentionState } from "@/lib/mention-types";
 import { initialMentionState } from "@/lib/mention-types";
 
@@ -279,6 +276,7 @@ function ChatInterfaceInner() {
     refreshProjects,
     refreshActiveProject,
     uploadFile,
+    getFileUrl,
   } = useProject();
   const loomEditParserRef = useRef(new LoomEditParser());
 
@@ -661,12 +659,39 @@ function ChatInterfaceInner() {
 
       if (!hasBreak) {
         // We're in a mention context
-        const query = textAfterAt;
-        const docs = searchDocuments(query);
-        setFilteredMentionDocs(docs);
+        // Search project files directly (filter to text/markdown files only)
+        const query = textAfterAt.toLowerCase();
+        const projectFiles = projectState.activeProject?.files || [];
+
+        // Filter to taggable files (text/markdown) and convert to RegistryDocument format
+        const taggableFiles = projectFiles
+          .filter((f) => {
+            const isTaggable =
+              f.type.includes("text") ||
+              f.type.includes("markdown") ||
+              f.name.endsWith(".md") ||
+              f.name.endsWith(".txt");
+            if (!isTaggable) return false;
+            // Filter by query if present
+            if (query) {
+              return f.name.toLowerCase().includes(query);
+            }
+            return true;
+          })
+          .map(
+            (f): RegistryDocument => ({
+              id: f.id,
+              title: f.name,
+              content: f.content || "", // Content will be fetched when selected
+              updatedAt: f.uploadedAt,
+              preview: f.content?.slice(0, 100) || "",
+            }),
+          );
+
+        setFilteredMentionDocs(taggableFiles);
         setMentionState({
           isOpen: true,
-          query,
+          query: textAfterAt,
           selectedIndex: 0,
           triggerIndex: lastAtIndex,
         });
@@ -681,13 +706,41 @@ function ChatInterfaceInner() {
   };
 
   // Handle selecting a document from the mention popover
-  const handleSelectMention = (doc: RegistryDocument) => {
-    // Add to mentioned documents if not already added
-    if (!mentionedDocuments.find((d) => d.id === doc.id)) {
-      setMentionedDocuments([
-        ...mentionedDocuments,
-        { id: doc.id, title: doc.title, content: doc.content },
-      ]);
+  const handleSelectMention = async (doc: RegistryDocument) => {
+    // Fetch the file content and open it in loom
+    try {
+      const response = await fetch(getFileUrl(doc.id));
+      if (response.ok) {
+        const content = await response.text();
+
+        // Open the file in loom
+        loom.openFile(doc.id, doc.title, content);
+
+        // Add to mentioned documents with the fetched content
+        if (!mentionedDocuments.find((d) => d.id === doc.id)) {
+          setMentionedDocuments([
+            ...mentionedDocuments,
+            { id: doc.id, title: doc.title, content: content },
+          ]);
+        }
+      } else {
+        // Fallback: add with whatever content we have
+        if (!mentionedDocuments.find((d) => d.id === doc.id)) {
+          setMentionedDocuments([
+            ...mentionedDocuments,
+            { id: doc.id, title: doc.title, content: doc.content },
+          ]);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch document content:", error);
+      // Fallback: add with whatever content we have
+      if (!mentionedDocuments.find((d) => d.id === doc.id)) {
+        setMentionedDocuments([
+          ...mentionedDocuments,
+          { id: doc.id, title: doc.title, content: doc.content },
+        ]);
+      }
     }
 
     // Remove the @query from input

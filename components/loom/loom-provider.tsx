@@ -17,7 +17,10 @@ import type {
   ModifiedBy,
 } from "@/lib/loom-types";
 import { applyPendingEdit } from "@/lib/diff-utils";
-import { addOrUpdateDocument } from "@/lib/document-registry";
+import {
+  addOrUpdateDocument,
+  cleanupNonFileDocuments,
+} from "@/lib/document-registry";
 
 const PANE_WIDTH_STORAGE_KEY = "loom-pane-width";
 const AUTO_ACCEPT_STORAGE_KEY = "loom-auto-accept-edits";
@@ -437,6 +440,9 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
 
   // Load persisted state from localStorage on mount
   useEffect(() => {
+    // Clean up any non-file documents from registry (e.g., old "Untitled Document" entries)
+    cleanupNonFileDocuments();
+
     const savedWidth = localStorage.getItem(PANE_WIDTH_STORAGE_KEY);
     if (savedWidth) {
       dispatch({ type: "SET_PANE_WIDTH", payload: parseFloat(savedWidth) });
@@ -479,7 +485,8 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
           });
 
           // Immediately sync to document registry for @mention feature
-          if (restoredDoc.content.trim().length > 0) {
+          // Only sync file-based documents (id starts with "file-"), not auto-created ones
+          if (restoredDoc.id.startsWith("file-")) {
             addOrUpdateDocument(restoredDoc as LoomDocument);
             console.log(
               "[LoomProvider] Synced restored document to registry:",
@@ -520,8 +527,8 @@ export function LoomProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(LOOM_DOCUMENT_STORAGE_KEY, JSON.stringify(docData));
 
       // Also update the document registry for @mention feature
-      // Only sync if document has meaningful content (not empty)
-      if (state.document.content.trim().length > 0) {
+      // Only sync file-based documents (id starts with "file-"), not auto-created ones
+      if (state.document.id.startsWith("file-")) {
         addOrUpdateDocument(state.document);
       }
     } else {
