@@ -394,7 +394,6 @@ function ChatInterfaceInner() {
           }
         }
       }
-      await finalizeAssistantResponse(fullResponse, newAssistantMessage.id);
     } catch (error) {
       console.error("Failed to fetch enabled models:", error);
     } finally {
