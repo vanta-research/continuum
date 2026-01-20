@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import {
   FileText,
   Image,
-  File,
+  File as FileIcon,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -35,7 +35,7 @@ function getFileIcon(type: string, name: string) {
     name.endsWith(".md")
   )
     return <FileText className="h-4 w-4 text-green-400 flex-shrink-0" />;
-  return <File className="h-4 w-4 text-gray-400 flex-shrink-0" />;
+  return <FileIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />;
 }
 
 function formatFileSize(bytes: number): string {
@@ -133,6 +133,7 @@ interface FileTreeItemProps {
   onDeleteFolder: (path: string) => void;
   onRenameFolder: (path: string) => void;
   onCreateFolder: (parentPath: string) => void;
+  onCreateDocumentInFolder: (path: string) => void;
   onUploadToFolder: (path: string) => void;
   onMoveFile: (fileId: string, targetFolderPath: string) => void;
   selectedFileId?: string | null;
@@ -151,6 +152,7 @@ function FileTreeItem({
   onDeleteFolder,
   onRenameFolder,
   onCreateFolder,
+  onCreateDocumentInFolder,
   onUploadToFolder,
   onMoveFile,
   selectedFileId,
@@ -260,6 +262,14 @@ function FileTreeItem({
             />
             <ContextMenuItem
               onClick={() => {
+                onCreateDocumentInFolder(node.path);
+                setContextMenu(null);
+              }}
+              icon={<FileText className="h-3 w-3" />}
+              label="New Document"
+            />
+            <ContextMenuItem
+              onClick={() => {
                 onUploadToFolder(node.path);
                 setContextMenu(null);
               }}
@@ -304,6 +314,7 @@ function FileTreeItem({
                 onDeleteFolder={onDeleteFolder}
                 onRenameFolder={onRenameFolder}
                 onCreateFolder={onCreateFolder}
+                onCreateDocumentInFolder={onCreateDocumentInFolder}
                 onUploadToFolder={onUploadToFolder}
                 onMoveFile={onMoveFile}
                 selectedFileId={selectedFileId}
@@ -647,6 +658,44 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
     }
   };
 
+  const handleCreateDocumentInFolder = async (folderPath: string) => {
+    const name = prompt("Document name:", "untitled.md");
+    if (!name || !projectId) return;
+
+    // Ensure it has a .md extension for markdown files
+    const fileName = name.endsWith(".md") ? name : `${name}.md`;
+
+    try {
+      // Create an empty markdown file
+      const emptyContent = new Blob([""], { type: "text/markdown" });
+      const file = new File([emptyContent], fileName, {
+        type: "text/markdown",
+      });
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folderPath", folderPath);
+
+      const response = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFileTree(data.tree || []);
+        refreshActiveProject();
+
+        // Open the newly created file in the editor
+        if (data.file) {
+          loom.openFile(data.file.id, data.file.name, "");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to create document:", error);
+    }
+  };
+
   if (!isOpen) {
     return (
       <div
@@ -721,6 +770,7 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
                 onDeleteFolder={handleDeleteFolder}
                 onRenameFolder={handleRenameFolder}
                 onCreateFolder={handleCreateFolder}
+                onCreateDocumentInFolder={handleCreateDocumentInFolder}
                 onUploadToFolder={handleUploadClick}
                 onMoveFile={handleMoveFile}
                 selectedFileId={loom.state.openFileId}
