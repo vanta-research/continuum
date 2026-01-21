@@ -23,6 +23,9 @@
 
 ## What Is Continuum?
 
+<img width="1624" height="842" alt="image" src="https://github.com/user-attachments/assets/c6f4ed0f-7cea-475d-a386-4030cf4660e3" />
+
+
 Continuum is a desktop workspace where you and AI write, research, and think together in real-time. 
 
 **Think Notion meets Claude, but actually built for collaboration from scratch.**
