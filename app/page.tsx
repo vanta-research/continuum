@@ -311,6 +311,11 @@ function ChatInterfaceInner() {
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState("");
+  const selectedModelRef = useRef(selectedModel);
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
 
@@ -473,7 +478,7 @@ function ChatInterfaceInner() {
         setLlamacppModels(data.models);
 
         // If no model is currently selected and llama.cpp has models, auto-select the first one
-        if (!selectedModel && data.models.length > 0) {
+        if (!selectedModelRef.current && data.models.length > 0) {
           setSelectedModel(`llamacpp:${data.models[0].id}`);
         }
       } else {
@@ -485,7 +490,7 @@ function ChatInterfaceInner() {
     } finally {
       setLoadingLlamacppModels(false);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Fetch Ollama models
   const fetchOllamaModels = useCallback(async () => {
@@ -498,7 +503,7 @@ function ChatInterfaceInner() {
         setOllamaModels(data.models);
 
         // If no model is currently selected and Ollama has models, auto-select the first one
-        if (!selectedModel && data.models.length > 0) {
+        if (!selectedModelRef.current && data.models.length > 0) {
           setSelectedModel(`ollama:${data.models[0].id}`);
         }
       } else {
@@ -510,7 +515,7 @@ function ChatInterfaceInner() {
     } finally {
       setLoadingOllamaModels(false);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Fetch Ollama models on mount and periodically check for changes
   useEffect(() => {
@@ -521,17 +526,28 @@ function ChatInterfaceInner() {
     return () => clearInterval(interval);
   }, [fetchOllamaModels]);
 
-  // Watch for llama.cpp server status changes
+  // Fetch llama.cpp models on mount and periodically check for changes
+  // This handles external llama.cpp servers (not managed by Electron)
+  useEffect(() => {
+    fetchLlamacppModels();
+
+    // Check for llama.cpp models every 30 seconds (in case server starts/stops)
+    const interval = setInterval(fetchLlamacppModels, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLlamacppModels]);
+
+  // Watch for llama.cpp server status changes (Electron-managed server)
   useEffect(() => {
     if (localServer.status.status === "running") {
       // Server is running, fetch available models
       fetchLlamacppModels();
-    } else {
-      // Server stopped, clear llama.cpp models
+    } else if (localServer.status.status === "stopped") {
+      // Server stopped, clear llama.cpp models only if this was the Electron-managed server
+      // Don't clear if we're using an external llama.cpp server
       setLlamacppModels([]);
 
       // If the selected model was a llama.cpp model, clear it or select another
-      if (selectedModel.startsWith("llamacpp:")) {
+      if (selectedModelRef.current.startsWith("llamacpp:")) {
         if (enabledModels.length > 0) {
           const firstModel = enabledModels[0];
           setSelectedModel(`${firstModel.provider}:${firstModel.id}`);
@@ -540,12 +556,7 @@ function ChatInterfaceInner() {
         }
       }
     }
-  }, [
-    localServer.status.status,
-    fetchLlamacppModels,
-    selectedModel,
-    enabledModels,
-  ]);
+  }, [localServer.status.status, fetchLlamacppModels, enabledModels]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
