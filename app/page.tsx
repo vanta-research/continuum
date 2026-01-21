@@ -536,6 +536,12 @@ function ChatInterfaceInner() {
     return () => clearInterval(interval);
   }, [fetchLlamacppModels]);
 
+  // Keep a ref to enabledModels for use in effects without causing re-runs
+  const enabledModelsRef = useRef(enabledModels);
+  useEffect(() => {
+    enabledModelsRef.current = enabledModels;
+  }, [enabledModels]);
+
   // Watch for llama.cpp server status changes (Electron-managed server)
   useEffect(() => {
     if (localServer.status.status === "running") {
@@ -548,15 +554,15 @@ function ChatInterfaceInner() {
 
       // If the selected model was a llama.cpp model, clear it or select another
       if (selectedModelRef.current.startsWith("llamacpp:")) {
-        if (enabledModels.length > 0) {
-          const firstModel = enabledModels[0];
+        if (enabledModelsRef.current.length > 0) {
+          const firstModel = enabledModelsRef.current[0];
           setSelectedModel(`${firstModel.provider}:${firstModel.id}`);
         } else {
           setSelectedModel("");
         }
       }
     }
-  }, [localServer.status.status, fetchLlamacppModels, enabledModels]);
+  }, [localServer.status.status, fetchLlamacppModels]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
@@ -674,9 +680,16 @@ function ChatInterfaceInner() {
         const query = textAfterAt.toLowerCase();
         const projectFiles = projectState.activeProject?.files || [];
 
+        // Get the currently open file in loom (if any) to exclude it
+        const openLoomFileId = loom.state.openFileId;
+
         // Filter to taggable files (text/markdown) and convert to RegistryDocument format
+        // Exclude the currently open loom document since it's already being sent as context
         const taggableFiles = projectFiles
           .filter((f) => {
+            // Exclude the currently open loom document
+            if (openLoomFileId && f.id === openLoomFileId) return false;
+
             const isTaggable =
               f.type.includes("text") ||
               f.type.includes("markdown") ||
