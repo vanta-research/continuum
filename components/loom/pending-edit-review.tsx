@@ -4,6 +4,8 @@ import React, {
   useState,
   useMemo,
   useEffect,
+  useCallback,
+  useRef,
   Component,
   ErrorInfo,
   ReactNode,
@@ -19,6 +21,7 @@ import {
   Plus,
   Minus,
   MoreHorizontal,
+  GripHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,6 +86,11 @@ interface PendingEditReviewProps {
   className?: string;
 }
 
+// Default and constraint values for panel height (in pixels)
+const DEFAULT_PANEL_HEIGHT = 320; // 20rem / max-h-80
+const MIN_PANEL_HEIGHT = 120;
+const MAX_PANEL_HEIGHT = 600;
+
 export function PendingEditReview({ className }: PendingEditReviewProps) {
   const {
     state,
@@ -93,6 +101,51 @@ export function PendingEditReview({ className }: PendingEditReviewProps) {
   } = useLoom();
 
   const { pendingEdits } = state;
+
+  // Panel height state for drag resizing
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef(0);
+  const dragStartHeight = useRef(0);
+
+  // Handle mouse down on the resize handle
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+      dragStartY.current = e.clientY;
+      dragStartHeight.current = panelHeight;
+    },
+    [panelHeight],
+  );
+
+  // Handle mouse move during drag
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Dragging up (negative delta) should increase height
+      // Dragging down (positive delta) should decrease height
+      const delta = dragStartY.current - e.clientY;
+      const newHeight = Math.min(
+        MAX_PANEL_HEIGHT,
+        Math.max(MIN_PANEL_HEIGHT, dragStartHeight.current + delta),
+      );
+      setPanelHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
 
   // Debug logging
   useEffect(() => {
@@ -121,10 +174,29 @@ export function PendingEditReview({ className }: PendingEditReviewProps) {
   return (
     <div
       className={cn(
-        "border-t border-border/50 bg-background/80 backdrop-blur-sm",
+        "border-t border-border/50 bg-background/80 backdrop-blur-sm flex flex-col",
+        isDragging && "select-none",
         className,
       )}
     >
+      {/* Resize handle */}
+      <div
+        className={cn(
+          "h-2 flex items-center justify-center cursor-ns-resize group transition-colors",
+          "hover:bg-primary/10",
+          isDragging && "bg-primary/20",
+        )}
+        onMouseDown={handleMouseDown}
+      >
+        <GripHorizontal
+          className={cn(
+            "h-4 w-4 text-muted-foreground/50 transition-colors",
+            "group-hover:text-primary/70",
+            isDragging && "text-primary",
+          )}
+        />
+      </div>
+
       <div className="px-4 py-2 flex items-center justify-between border-b border-border/30">
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-amber-500" />
@@ -159,7 +231,10 @@ export function PendingEditReview({ className }: PendingEditReviewProps) {
         )}
       </div>
 
-      <div className="max-h-80 overflow-y-auto">
+      <div
+        className="overflow-y-auto flex flex-col"
+        style={{ height: `${panelHeight}px` }}
+      >
         {pendingEdits.map((edit) => (
           <PendingEditCard
             key={edit.id}
@@ -167,6 +242,7 @@ export function PendingEditReview({ className }: PendingEditReviewProps) {
             onAccept={() => acceptPendingEdit(edit.id)}
             onReject={() => rejectPendingEdit(edit.id)}
             onModify={(newContent) => modifyPendingEdit(edit.id, newContent)}
+            fillSpace={pendingEdits.length === 1}
           />
         ))}
       </div>
@@ -179,6 +255,7 @@ interface PendingEditCardProps {
   onAccept: () => void;
   onReject: () => void;
   onModify: (newContent: string) => void;
+  fillSpace?: boolean;
 }
 
 function PendingEditCard({
@@ -186,6 +263,7 @@ function PendingEditCard({
   onAccept,
   onReject,
   onModify,
+  fillSpace = false,
 }: PendingEditCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -240,10 +318,15 @@ function PendingEditCard({
   };
 
   return (
-    <div className="border-b border-border/30 last:border-b-0">
+    <div
+      className={cn(
+        "border-b border-border/30 last:border-b-0",
+        fillSpace && "flex-1 flex flex-col min-h-0",
+      )}
+    >
       {/* Header */}
       <div
-        className="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
+        className="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors flex-shrink-0"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-3">
@@ -305,7 +388,12 @@ function PendingEditCard({
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="px-4 pb-3">
+        <div
+          className={cn(
+            "px-4 pb-3",
+            fillSpace && "flex-1 flex flex-col min-h-0",
+          )}
+        >
           {isEditing ? (
             <div className="space-y-2">
               <Textarea
@@ -335,16 +423,21 @@ function PendingEditCard({
           ) : (
             <DiffErrorBoundary>
               <div
-                className={
-                  isLargeEdit ? "max-h-64 overflow-y-auto" : "max-h-96"
-                }
+                className={cn(
+                  "overflow-y-auto",
+                  fillSpace
+                    ? "flex-1 min-h-0"
+                    : isLargeEdit
+                      ? "max-h-64"
+                      : "max-h-96",
+                )}
               >
                 <HunkDiffView hunks={hunks} />
               </div>
             </DiffErrorBoundary>
           )}
 
-          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground flex-shrink-0">
             <Clock className="h-3 w-3" />
             <span>
               {edit.timestamp.toLocaleTimeString([], {

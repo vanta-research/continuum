@@ -464,8 +464,15 @@ export function parseAddFileMarkers(content: string): ParsedAddFile {
 
 /**
  * Clean ADD_FILE markers from text for display during streaming.
+ *
+ * @param text - The text to clean
+ * @param isStreamComplete - If true, the stream has finished and we should handle
+ *                           incomplete blocks differently (show a message instead of hiding)
  */
-export function cleanAddFileMarkers(text: string): string {
+export function cleanAddFileMarkers(
+  text: string,
+  isStreamComplete = false,
+): string {
   // Quick check - if no markers, return early
   if (!text.includes("[ADD_FILE]") && !text.includes("[/ADD_FILE]")) {
     return text;
@@ -474,6 +481,8 @@ export function cleanAddFileMarkers(text: string): string {
   console.log(
     "[cleanAddFileMarkers] Found markers, input length:",
     text.length,
+    "isStreamComplete:",
+    isStreamComplete,
   );
 
   let result = text;
@@ -498,8 +507,23 @@ export function cleanAddFileMarkers(text: string): string {
       result = before + after;
       console.log(`[cleanAddFileMarkers] Removed complete block`);
     } else if (startIdx !== -1 && (endIdx === -1 || endIdx < startIdx)) {
-      // Start marker but no valid end - remove from start marker to end
-      result = result.substring(0, startIdx);
+      // Start marker but no valid end - incomplete block
+      if (isStreamComplete) {
+        // Stream is done but we never got an end marker - model was cut off
+        // Show a helpful message instead of just hiding everything
+        const before = result.substring(0, startIdx);
+        result =
+          before.trim() ||
+          "(Edit content was truncated - the model may have hit a token limit)";
+        console.log(
+          "[cleanAddFileMarkers] Incomplete block at stream end, showing truncation message",
+        );
+      } else {
+        // Still streaming - just show "Generating edit..." placeholder
+        const before = result.substring(0, startIdx);
+        result = before.trim() || "Generating edit...";
+        console.log("[cleanAddFileMarkers] Incomplete block during streaming");
+      }
       break;
     } else if (endIdx !== -1 && startIdx === -1) {
       // Orphaned end marker - remove just the marker
