@@ -348,10 +348,10 @@ function ChatInterfaceInner() {
   const [loadingOllamaModels, setLoadingOllamaModels] = useState(true);
 
   // Check if user has configured any models (including local models)
+  // Note: Ollama models must be enabled in settings to appear, so they're already in enabledModels
   const hasConfiguredModels =
     enabledModels.length > 0 ||
-    llamacppModels.length > 0 ||
-    ollamaModels.length > 0;
+    llamacppModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -2112,14 +2112,24 @@ function ChatInterfaceInner() {
                         </div>
                       )}
 
-                      {/* Ollama models */}
-                      {ollamaModels.length > 0 && (
+                      {/* Ollama models - only show models enabled in settings */}
+                      {ollamaModels.filter((m) =>
+                        enabledModels.some(
+                          (em) => em.provider === "ollama" && em.id === m.id
+                        )
+                      ).length > 0 && (
                         <>
                           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                             Ollama
                           </div>
-                          {ollamaModels.map((model) => {
+                          {ollamaModels
+                            .filter((m) =>
+                              enabledModels.some(
+                                (em) => em.provider === "ollama" && em.id === m.id
+                              )
+                            )
+                            .map((model) => {
                             const modelValue = `ollama:${model.id}`;
                             const isDefault = modelValue === defaultModel;
                             return (
