@@ -40,6 +40,9 @@ export interface PendingEdit {
 // Diff line types for rendering
 export type DiffLineType = "unchanged" | "added" | "removed" | "modified";
 
+// Line-level decision for granular diff control
+export type LineDecision = "pending" | "accepted" | "rejected" | "edited";
+
 export interface DiffLine {
   type: DiffLineType;
   lineNumber: {
@@ -47,6 +50,9 @@ export interface DiffLine {
     new: number | null;
   };
   content: string;
+  // Optional: for line-level editing
+  decision?: LineDecision;
+  editedContent?: string; // If decision is "edited", this holds the modified content
 }
 
 export interface DiffResult {

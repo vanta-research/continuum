@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useLoom } from "./loom-provider";
-import type { PendingEdit, DiffLine } from "@/lib/loom-types";
+import type { PendingEdit, DiffLine, LineDecision } from "@/lib/loom-types";
 import {
   computeDiff,
   getDiffHunks,
@@ -269,6 +269,14 @@ function PendingEditCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(edit.newContent);
 
+  // Line-level decision tracking: Map<globalLineIndex, {decision, editedContent?}>
+  const [lineDecisions, setLineDecisions] = useState<
+    Map<number, { decision: LineDecision; editedContent?: string }>
+  >(new Map());
+
+  // Track if we're in line-by-line mode (enabled once user makes first line decision)
+  const [lineByLineMode, setLineByLineMode] = useState(false);
+
   // Safely compute diff and hunks with error handling
   const { diff, hunks } = useMemo(() => {
     try {
@@ -304,8 +312,94 @@ function PendingEditCard({
     }
   }, [edit.originalContent, edit.newContent]);
 
+  // Flatten all diff lines for building final content
+  const allDiffLines = useMemo(() => {
+    return hunks.flatMap((hunk) => hunk.lines);
+  }, [hunks]);
+
   // Check if this is a large edit
   const isLargeEdit = edit.newContent.length > 5000 || diff.lines.length > 100;
+
+  // Line-level action handlers
+  const handleAcceptLine = useCallback((lineIndex: number) => {
+    setLineByLineMode(true);
+    setLineDecisions((prev) => {
+      const next = new Map(prev);
+      next.set(lineIndex, { decision: "accepted" });
+      return next;
+    });
+  }, []);
+
+  const handleRejectLine = useCallback((lineIndex: number) => {
+    setLineByLineMode(true);
+    setLineDecisions((prev) => {
+      const next = new Map(prev);
+      next.set(lineIndex, { decision: "rejected" });
+      return next;
+    });
+  }, []);
+
+  const handleEditLine = useCallback(
+    (lineIndex: number, newContent: string) => {
+      setLineByLineMode(true);
+      setLineDecisions((prev) => {
+        const next = new Map(prev);
+        next.set(lineIndex, { decision: "edited", editedContent: newContent });
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Build final content from line decisions
+  const buildFinalContent = useCallback((): string => {
+    const resultLines: string[] = [];
+
+    allDiffLines.forEach((line, index) => {
+      const decision = lineDecisions.get(index);
+
+      if (line.type === "unchanged") {
+        // Unchanged lines always included
+        resultLines.push(line.content);
+      } else if (line.type === "added") {
+        // Added line: include if accepted/edited/pending, exclude if rejected
+        if (decision?.decision === "rejected") {
+          // Don't include this added line
+        } else if (decision?.decision === "edited") {
+          resultLines.push(decision.editedContent || line.content);
+        } else {
+          // Accepted or pending - include the line
+          resultLines.push(line.content);
+        }
+      } else if (line.type === "removed") {
+        // Removed line: exclude if accepted (confirm removal), include if rejected (keep original)
+        if (decision?.decision === "rejected") {
+          // User rejected the removal, keep the original line
+          resultLines.push(line.content);
+        } else if (decision?.decision === "edited") {
+          // User edited the removal - use the edited content instead
+          resultLines.push(decision.editedContent || "");
+        }
+        // If accepted or pending, the line is removed (not added to result)
+      }
+    });
+
+    return resultLines.join("\n");
+  }, [allDiffLines, lineDecisions]);
+
+  // Handle accepting with line decisions
+  const handleAcceptWithLineDecisions = useCallback(() => {
+    if (lineByLineMode && lineDecisions.size > 0) {
+      // Build final content from line decisions
+      const finalContent = buildFinalContent();
+      onModify(finalContent);
+      // Then accept
+      setTimeout(() => onAccept(), 0);
+    } else {
+      // No line decisions made, accept as-is
+      onAccept();
+    }
+  }, [lineByLineMode, lineDecisions, buildFinalContent, onModify, onAccept]);
 
   const handleSaveEdit = () => {
     onModify(editedContent);
@@ -316,6 +410,27 @@ function PendingEditCard({
     setEditedContent(edit.newContent);
     setIsEditing(false);
   };
+
+  // Count decisions for UI feedback
+  const decisionCounts = useMemo(() => {
+    let accepted = 0,
+      rejected = 0,
+      edited = 0,
+      pending = 0;
+    const totalActionable = allDiffLines.filter(
+      (l) => l.type === "added" || l.type === "removed",
+    ).length;
+
+    lineDecisions.forEach(({ decision }) => {
+      if (decision === "accepted") accepted++;
+      else if (decision === "rejected") rejected++;
+      else if (decision === "edited") edited++;
+    });
+
+    pending = totalActionable - accepted - rejected - edited;
+
+    return { accepted, rejected, edited, pending, total: totalActionable };
+  }, [lineDecisions, allDiffLines]);
 
   return (
     <div
@@ -377,14 +492,63 @@ function PendingEditCard({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onAccept}
+            onClick={handleAcceptWithLineDecisions}
             className="h-7 w-7 p-0 text-muted-foreground hover:text-green-400"
-            title="Accept this change"
+            title={
+              lineByLineMode ? "Accept with line changes" : "Accept this change"
+            }
           >
             <Check className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
+
+      {/* Line-by-line mode indicator */}
+      {lineByLineMode && lineDecisions.size > 0 && (
+        <div className="px-4 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">
+            Line-by-line mode:{" "}
+            <span className="text-green-500">
+              {decisionCounts.accepted} accepted
+            </span>
+            {decisionCounts.rejected > 0 && (
+              <>
+                ,{" "}
+                <span className="text-red-500">
+                  {decisionCounts.rejected} rejected
+                </span>
+              </>
+            )}
+            {decisionCounts.edited > 0 && (
+              <>
+                ,{" "}
+                <span className="text-blue-500">
+                  {decisionCounts.edited} edited
+                </span>
+              </>
+            )}
+            {decisionCounts.pending > 0 && (
+              <>
+                ,{" "}
+                <span className="text-muted-foreground">
+                  {decisionCounts.pending} pending
+                </span>
+              </>
+            )}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLineDecisions(new Map());
+              setLineByLineMode(false);
+            }}
+            className="h-5 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Reset
+          </Button>
+        </div>
+      )}
 
       {/* Expanded content */}
       {isExpanded && (
@@ -432,7 +596,16 @@ function PendingEditCard({
                       : "max-h-96",
                 )}
               >
-                <HunkDiffView hunks={hunks} />
+                <HunkDiffView
+                  hunks={hunks}
+                  lineDecisions={lineDecisions}
+                  lineActions={{
+                    onAcceptLine: handleAcceptLine,
+                    onRejectLine: handleRejectLine,
+                    onEditLine: handleEditLine,
+                  }}
+                  enableLineActions={true}
+                />
               </div>
             </DiffErrorBoundary>
           )}
@@ -478,11 +651,34 @@ function DiffStats({ diff }: DiffStatsProps) {
   );
 }
 
-interface HunkDiffViewProps {
-  hunks: DiffHunk[];
+// Line action callbacks for granular diff control
+interface LineActionCallbacks {
+  onAcceptLine: (lineIndex: number) => void;
+  onRejectLine: (lineIndex: number) => void;
+  onEditLine: (lineIndex: number, newContent: string) => void;
 }
 
-function HunkDiffView({ hunks }: HunkDiffViewProps) {
+// Extended diff line with index for tracking
+interface IndexedDiffLine extends DiffLine {
+  globalIndex: number; // Index across all hunks for tracking decisions
+}
+
+interface HunkDiffViewProps {
+  hunks: DiffHunk[];
+  lineDecisions?: Map<
+    number,
+    { decision: LineDecision; editedContent?: string }
+  >;
+  lineActions?: LineActionCallbacks;
+  enableLineActions?: boolean;
+}
+
+function HunkDiffView({
+  hunks,
+  lineDecisions,
+  lineActions,
+  enableLineActions = false,
+}: HunkDiffViewProps) {
   if (hunks.length === 0) {
     return (
       <div className="text-xs text-muted-foreground italic py-2">
@@ -491,67 +687,182 @@ function HunkDiffView({ hunks }: HunkDiffViewProps) {
     );
   }
 
+  // Build global line index across all hunks
+  let globalLineIndex = 0;
+
   return (
     <div className="rounded-md border border-border/50 overflow-hidden bg-background/30">
-      {hunks.map((hunk, hunkIdx) => (
-        <div key={hunkIdx}>
-          {/* Hunk header */}
-          <div className="px-3 py-1.5 bg-primary/10 border-b border-border/30 text-xs font-mono text-primary">
-            {formatHunkHeader(hunk)}
-          </div>
+      {hunks.map((hunk, hunkIdx) => {
+        const hunkStartIndex = globalLineIndex;
 
-          {/* Hunk separator between multiple hunks */}
-          {hunkIdx > 0 && (
-            <div className="px-3 py-1 bg-muted/20 border-y border-border/30 text-xs text-muted-foreground flex items-center gap-2">
-              <MoreHorizontal className="h-3 w-3" />
-              <span>...</span>
+        return (
+          <div key={hunkIdx}>
+            {/* Hunk header */}
+            <div className="px-3 py-1.5 bg-primary/10 border-b border-border/30 text-xs font-mono text-primary">
+              {formatHunkHeader(hunk)}
             </div>
-          )}
 
-          {/* Hunk lines */}
-          <table className="w-full text-xs font-mono table-fixed">
-            <colgroup>
-              <col className="w-10" />
-              <col className="w-10" />
-              <col className="w-4" />
-              <col />
-            </colgroup>
-            <tbody>
-              {hunk.lines.map((line, lineIdx) => (
-                <DiffLineRow key={lineIdx} line={line} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+            {/* Hunk separator between multiple hunks */}
+            {hunkIdx > 0 && (
+              <div className="px-3 py-1 bg-muted/20 border-y border-border/30 text-xs text-muted-foreground flex items-center gap-2">
+                <MoreHorizontal className="h-3 w-3" />
+                <span>...</span>
+              </div>
+            )}
+
+            {/* Hunk lines */}
+            <table className="w-full text-xs font-mono table-fixed">
+              <colgroup>
+                <col className="w-10" />
+                <col className="w-10" />
+                <col className="w-4" />
+                <col />
+                {enableLineActions && <col className="w-20" />}
+              </colgroup>
+              <tbody>
+                {hunk.lines.map((line, lineIdx) => {
+                  const currentGlobalIndex = hunkStartIndex + lineIdx;
+                  globalLineIndex = currentGlobalIndex + 1;
+                  const lineDecision = lineDecisions?.get(currentGlobalIndex);
+
+                  return (
+                    <DiffLineRow
+                      key={lineIdx}
+                      line={line}
+                      globalIndex={currentGlobalIndex}
+                      decision={lineDecision?.decision}
+                      editedContent={lineDecision?.editedContent}
+                      enableActions={
+                        enableLineActions &&
+                        (line.type === "added" || line.type === "removed")
+                      }
+                      onAccept={lineActions?.onAcceptLine}
+                      onReject={lineActions?.onRejectLine}
+                      onEdit={lineActions?.onEditLine}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 interface DiffLineRowProps {
   line: DiffLine;
+  globalIndex: number;
+  decision?: LineDecision;
+  editedContent?: string;
+  enableActions?: boolean;
+  onAccept?: (lineIndex: number) => void;
+  onReject?: (lineIndex: number) => void;
+  onEdit?: (lineIndex: number, newContent: string) => void;
 }
 
-function DiffLineRow({ line }: DiffLineRowProps) {
-  const bgColor =
-    line.type === "added"
-      ? "bg-green-500/10"
-      : line.type === "removed"
-        ? "bg-red-500/10"
-        : "";
+function DiffLineRow({
+  line,
+  globalIndex,
+  decision,
+  editedContent,
+  enableActions = false,
+  onAccept,
+  onReject,
+  onEdit,
+}: DiffLineRowProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(line.content);
 
-  const textColor =
-    line.type === "added"
-      ? "text-green-400"
-      : line.type === "removed"
-        ? "text-red-400"
-        : "text-muted-foreground";
+  // Determine colors based on line type and decision
+  const getColors = () => {
+    // If line has been decided, show different styling
+    if (decision === "accepted") {
+      return {
+        bg: "bg-green-500/20",
+        text: "text-green-300",
+        border: "border-l-2 border-l-green-500",
+      };
+    }
+    if (decision === "rejected") {
+      return {
+        bg: "bg-red-500/5 opacity-50",
+        text: "text-muted-foreground line-through",
+        border: "border-l-2 border-l-red-500/50",
+      };
+    }
+    if (decision === "edited") {
+      return {
+        bg: "bg-blue-500/20",
+        text: "text-blue-300",
+        border: "border-l-2 border-l-blue-500",
+      };
+    }
 
+    // Default colors based on line type
+    if (line.type === "added") {
+      return { bg: "bg-green-500/10", text: "text-green-400", border: "" };
+    }
+    if (line.type === "removed") {
+      return { bg: "bg-red-500/10", text: "text-red-400", border: "" };
+    }
+    return { bg: "", text: "text-muted-foreground", border: "" };
+  };
+
+  const colors = getColors();
   const prefix =
     line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+  const displayContent =
+    decision === "edited" && editedContent ? editedContent : line.content;
+
+  const handleAccept = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAccept?.(globalIndex);
+  };
+
+  const handleReject = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onReject?.(globalIndex);
+  };
+
+  const handleStartEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditValue(displayContent);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = () => {
+    onEdit?.(globalIndex, editValue);
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditValue(line.content);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === "Escape") {
+      handleCancelEdit();
+    }
+  };
 
   return (
-    <tr className={cn("border-b border-border/20 last:border-b-0", bgColor)}>
+    <tr
+      className={cn(
+        "border-b border-border/20 last:border-b-0 group transition-colors",
+        colors.bg,
+        colors.border,
+        enableActions && !decision && "hover:bg-muted/30",
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       {/* Old line number */}
       <td className="px-2 py-0.5 text-right text-muted-foreground/50 select-none border-r border-border/20 align-top">
         {line.lineNumber.old ?? ""}
@@ -561,15 +872,78 @@ function DiffLineRow({ line }: DiffLineRowProps) {
         {line.lineNumber.new ?? ""}
       </td>
       {/* Prefix */}
-      <td className={cn("px-1 py-0.5 select-none align-top", textColor)}>
+      <td className={cn("px-1 py-0.5 select-none align-top", colors.text)}>
         {prefix}
       </td>
       {/* Content */}
       <td
-        className={cn("px-2 py-0.5 whitespace-pre-wrap break-words", textColor)}
+        className={cn(
+          "px-2 py-0.5 whitespace-pre-wrap break-words",
+          colors.text,
+        )}
       >
-        {line.content || " "}
+        {isEditing ? (
+          <input
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleSaveEdit}
+            autoFocus
+            className="w-full bg-background/80 border border-border rounded px-1 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        ) : (
+          displayContent || " "
+        )}
       </td>
+      {/* Action buttons column */}
+      {enableActions && (
+        <td className="px-1 py-0.5 align-top">
+          {isHovered && !decision && !isEditing && (
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleAccept}
+                className="p-0.5 rounded hover:bg-green-500/20 text-muted-foreground hover:text-green-400 transition-colors"
+                title={
+                  line.type === "added" ? "Keep this line" : "Remove this line"
+                }
+              >
+                <Check className="h-3 w-3" />
+              </button>
+              <button
+                onClick={handleStartEdit}
+                className="p-0.5 rounded hover:bg-blue-500/20 text-muted-foreground hover:text-blue-400 transition-colors"
+                title="Edit this line"
+              >
+                <Edit3 className="h-3 w-3" />
+              </button>
+              <button
+                onClick={handleReject}
+                className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors"
+                title={
+                  line.type === "added"
+                    ? "Don't add this line"
+                    : "Keep original line"
+                }
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          {decision && (
+            <span
+              className={cn(
+                "text-[10px] uppercase font-medium",
+                decision === "accepted" && "text-green-500",
+                decision === "rejected" && "text-red-500/50",
+                decision === "edited" && "text-blue-500",
+              )}
+            >
+              {decision}
+            </span>
+          )}
+        </td>
+      )}
     </tr>
   );
 }
