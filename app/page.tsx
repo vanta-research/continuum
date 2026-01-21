@@ -681,14 +681,22 @@ function ChatInterfaceInner() {
         const projectFiles = projectState.activeProject?.files || [];
 
         // Get the currently open file in loom (if any) to exclude it
+        // Check both openFileId and document.id (document.id has "file-" prefix)
         const openLoomFileId = loom.state.openFileId;
+        const openLoomDocId = loom.state.document?.id;
 
         // Filter to taggable files (text/markdown) and convert to RegistryDocument format
         // Exclude the currently open loom document since it's already being sent as context
         const taggableFiles = projectFiles
           .filter((f) => {
             // Exclude the currently open loom document
-            if (openLoomFileId && f.id === openLoomFileId) return false;
+            // Check against openFileId OR document.id (which is "file-{fileId}")
+            if (openLoomFileId && f.id === openLoomFileId) {
+              return false;
+            }
+            if (openLoomDocId && openLoomDocId === `file-${f.id}`) {
+              return false;
+            }
 
             const isTaggable =
               f.type.includes("text") ||
