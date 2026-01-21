@@ -98,6 +98,8 @@ The Loom is Continuum's real-time collaborative editor. This is where you work *
 - **Export to PDF** with configurable formatting (headers, footers, page numbers)
 - **Version history** via persistent storage
 - **Multiple documents** per project
+- **File manager** with folders — Organize documents hierarchically, create new documents directly in folders via right-click
+- **Document tagging** — Use `@` in chat to tag any document as context, auto-opens in Loom for seamless editing
 
 This isn't a document editor with AI bolted on. It's a shared workspace where both participants can write.
 
@@ -111,6 +113,7 @@ Chat isn't just for commands—it's for thinking out loud.
 - Ask questions about your documents
 - Branch into multiple conversation threads
 - Resume any past discussion with full context
+- **Tag documents with `@`** — Reference any file from your project as context for the conversation
 
 Every project maintains its own conversation history. Switch projects, switch contexts. Your thinking stays organized.
 
@@ -316,9 +319,11 @@ GET   /api/models/openrouter                # List OpenRouter models
 **Shipped:**
 - [x] Real-time collaborative editing (The Loom)
 - [x] Multi-provider support (OpenAI, Anthropic, Mistral, OpenRouter)
-- [x] Local model support (llama.cpp integration)
+- [x] Local model support (llama.cpp + Ollama integration)
 - [x] PDF export with formatting options
 - [x] Model selection and download UI
+- [x] File manager with folder organization
+- [x] Document tagging (`@mentions`) for adding context to conversations
 
 **In Development:**
 - [ ] Voice input/output

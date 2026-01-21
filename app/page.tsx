@@ -311,6 +311,11 @@ function ChatInterfaceInner() {
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState("");
+  const selectedModelRef = useRef(selectedModel);
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
 
@@ -343,10 +348,9 @@ function ChatInterfaceInner() {
   const [loadingOllamaModels, setLoadingOllamaModels] = useState(true);
 
   // Check if user has configured any models (including local models)
+  // Note: Ollama models must be enabled in settings to appear, so they're already in enabledModels
   const hasConfiguredModels =
-    enabledModels.length > 0 ||
-    llamacppModels.length > 0 ||
-    ollamaModels.length > 0;
+    enabledModels.length > 0 || llamacppModels.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -473,7 +477,7 @@ function ChatInterfaceInner() {
         setLlamacppModels(data.models);
 
         // If no model is currently selected and llama.cpp has models, auto-select the first one
-        if (!selectedModel && data.models.length > 0) {
+        if (!selectedModelRef.current && data.models.length > 0) {
           setSelectedModel(`llamacpp:${data.models[0].id}`);
         }
       } else {
@@ -485,7 +489,7 @@ function ChatInterfaceInner() {
     } finally {
       setLoadingLlamacppModels(false);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Fetch Ollama models
   const fetchOllamaModels = useCallback(async () => {
@@ -498,7 +502,7 @@ function ChatInterfaceInner() {
         setOllamaModels(data.models);
 
         // If no model is currently selected and Ollama has models, auto-select the first one
-        if (!selectedModel && data.models.length > 0) {
+        if (!selectedModelRef.current && data.models.length > 0) {
           setSelectedModel(`ollama:${data.models[0].id}`);
         }
       } else {
@@ -510,7 +514,7 @@ function ChatInterfaceInner() {
     } finally {
       setLoadingOllamaModels(false);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Fetch Ollama models on mount and periodically check for changes
   useEffect(() => {
@@ -521,31 +525,43 @@ function ChatInterfaceInner() {
     return () => clearInterval(interval);
   }, [fetchOllamaModels]);
 
-  // Watch for llama.cpp server status changes
+  // Fetch llama.cpp models on mount and periodically check for changes
+  // This handles external llama.cpp servers (not managed by Electron)
+  useEffect(() => {
+    fetchLlamacppModels();
+
+    // Check for llama.cpp models every 30 seconds (in case server starts/stops)
+    const interval = setInterval(fetchLlamacppModels, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLlamacppModels]);
+
+  // Keep a ref to enabledModels for use in effects without causing re-runs
+  const enabledModelsRef = useRef(enabledModels);
+  useEffect(() => {
+    enabledModelsRef.current = enabledModels;
+  }, [enabledModels]);
+
+  // Watch for llama.cpp server status changes (Electron-managed server)
   useEffect(() => {
     if (localServer.status.status === "running") {
       // Server is running, fetch available models
       fetchLlamacppModels();
-    } else {
-      // Server stopped, clear llama.cpp models
+    } else if (localServer.status.status === "stopped") {
+      // Server stopped, clear llama.cpp models only if this was the Electron-managed server
+      // Don't clear if we're using an external llama.cpp server
       setLlamacppModels([]);
 
       // If the selected model was a llama.cpp model, clear it or select another
-      if (selectedModel.startsWith("llamacpp:")) {
-        if (enabledModels.length > 0) {
-          const firstModel = enabledModels[0];
+      if (selectedModelRef.current.startsWith("llamacpp:")) {
+        if (enabledModelsRef.current.length > 0) {
+          const firstModel = enabledModelsRef.current[0];
           setSelectedModel(`${firstModel.provider}:${firstModel.id}`);
         } else {
           setSelectedModel("");
         }
       }
     }
-  }, [
-    localServer.status.status,
-    fetchLlamacppModels,
-    selectedModel,
-    enabledModels,
-  ]);
+  }, [localServer.status.status, fetchLlamacppModels]);
 
   // Save the current model as the default
   const saveAsDefaultModel = useCallback(async (modelValue: string) => {
@@ -663,9 +679,24 @@ function ChatInterfaceInner() {
         const query = textAfterAt.toLowerCase();
         const projectFiles = projectState.activeProject?.files || [];
 
+        // Get the currently open file in loom (if any) to exclude it
+        // Check both openFileId and document.id (document.id has "file-" prefix)
+        const openLoomFileId = loom.state.openFileId;
+        const openLoomDocId = loom.state.document?.id;
+
         // Filter to taggable files (text/markdown) and convert to RegistryDocument format
+        // Exclude the currently open loom document since it's already being sent as context
         const taggableFiles = projectFiles
           .filter((f) => {
+            // Exclude the currently open loom document
+            // Check against openFileId OR document.id (which is "file-{fileId}")
+            if (openLoomFileId && f.id === openLoomFileId) {
+              return false;
+            }
+            if (openLoomDocId && openLoomDocId === `file-${f.id}`) {
+              return false;
+            }
+
             const isTaggable =
               f.type.includes("text") ||
               f.type.includes("markdown") ||
@@ -788,7 +819,10 @@ function ChatInterfaceInner() {
     return cleaned.trim();
   };
 
-  const cleanAllToolMarkers = (text: string): string => {
+  const cleanAllToolMarkers = (
+    text: string,
+    isStreamComplete = false,
+  ): string => {
     const hasStart = text.includes("[ADD_FILE]");
     const hasEnd = text.includes("[/ADD_FILE]");
     console.log(
@@ -798,6 +832,8 @@ function ChatInterfaceInner() {
       hasEnd,
       "length:",
       text.length,
+      "isStreamComplete:",
+      isStreamComplete,
     );
 
     // If we have both markers, log a preview
@@ -824,7 +860,7 @@ function ChatInterfaceInner() {
       cleaned.includes("[ADD_FILE]"),
     );
 
-    cleaned = cleanAddFileMarkers(cleaned);
+    cleaned = cleanAddFileMarkers(cleaned, isStreamComplete);
     console.log(
       "[cleanAllToolMarkers] After cleanAddFileMarkers, has ADD_FILE?:",
       cleaned.includes("[ADD_FILE]"),
@@ -1082,6 +1118,44 @@ function ChatInterfaceInner() {
                 );
               }
             }
+          } else if (fullResponse.includes("[ADD_FILE]")) {
+            // Incomplete ADD_FILE block - model was likely cut off before sending [/ADD_FILE]
+            console.log(
+              "[Loom Debug] Found incomplete ADD_FILE block (no closing tag)",
+            );
+            console.log(
+              "[Loom Debug] Attempting to extract content from truncated response...",
+            );
+
+            // Extract everything after [ADD_FILE]
+            const addFileStartIdx = fullResponse.indexOf("[ADD_FILE]");
+            const afterMarker = fullResponse.substring(
+              addFileStartIdx + "[ADD_FILE]".length,
+            );
+
+            // Try to parse the JSON content even if incomplete
+            // Look for "content": "..." pattern
+            const contentMatch = afterMarker.match(
+              /"content"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/,
+            );
+            if (contentMatch) {
+              editContent = contentMatch[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, "\\")
+                .replace(/\\t/g, "\t");
+              console.log(
+                "[Loom Debug] Extracted content from incomplete ADD_FILE, length:",
+                editContent.length,
+              );
+              console.log(
+                "[Loom Debug] WARNING: Content may be truncated due to model token limit",
+              );
+            } else {
+              console.log(
+                "[Loom Debug] Could not extract content from incomplete ADD_FILE block",
+              );
+            }
           } else {
             console.log("[Loom Debug] No ADD_FILE match found in response");
             console.log(
@@ -1138,7 +1212,8 @@ function ChatInterfaceInner() {
             console.log("[Loom Debug] Content updated in Loom");
 
             // Final cleanup of chat message (handles both ADD_FILE and CANVAS_EDIT)
-            const cleanedMessage = cleanAllToolMarkers(fullResponse);
+            // Pass true to indicate stream is complete (for proper handling of incomplete markers)
+            const cleanedMessage = cleanAllToolMarkers(fullResponse, true);
             console.log(
               "[Loom Debug] cleanedMessage length:",
               cleanedMessage.length,
@@ -1223,7 +1298,8 @@ function ChatInterfaceInner() {
             );
 
             // Update chat message to indicate pending review
-            const cleanedMessage = cleanAllToolMarkers(fullResponse);
+            // Pass true to indicate stream is complete (for proper handling of incomplete markers)
+            const cleanedMessage = cleanAllToolMarkers(fullResponse, true);
 
             // Compute just the added lines for display
             const diff = computeDiff(originalContent, editContent);
@@ -2080,33 +2156,44 @@ function ChatInterfaceInner() {
                         </div>
                       )}
 
-                      {/* Ollama models */}
-                      {ollamaModels.length > 0 && (
+                      {/* Ollama models - only show models enabled in settings */}
+                      {ollamaModels.filter((m) =>
+                        enabledModels.some(
+                          (em) => em.provider === "ollama" && em.id === m.id,
+                        ),
+                      ).length > 0 && (
                         <>
                           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                             Ollama
                           </div>
-                          {ollamaModels.map((model) => {
-                            const modelValue = `ollama:${model.id}`;
-                            const isDefault = modelValue === defaultModel;
-                            return (
-                              <SelectItem
-                                key={`ollama-${model.id}`}
-                                value={modelValue}
-                              >
-                                <div className="flex items-center gap-2">
-                                  {isDefault && (
-                                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                                  )}
-                                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
-                                    ollama
-                                  </span>
-                                  <span>{model.name}</span>
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
+                          {ollamaModels
+                            .filter((m) =>
+                              enabledModels.some(
+                                (em) =>
+                                  em.provider === "ollama" && em.id === m.id,
+                              ),
+                            )
+                            .map((model) => {
+                              const modelValue = `ollama:${model.id}`;
+                              const isDefault = modelValue === defaultModel;
+                              return (
+                                <SelectItem
+                                  key={`ollama-${model.id}`}
+                                  value={modelValue}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {isDefault && (
+                                      <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                    )}
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                      ollama
+                                    </span>
+                                    <span>{model.name}</span>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
                         </>
                       )}
 
