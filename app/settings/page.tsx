@@ -63,10 +63,19 @@ const PROVIDERS: ProviderConfig[] = [
   {
     id: "atom",
     name: "Local AI",
-    description: "Ollama / llama.cpp",
+    description: "llama.cpp",
     icon: <Cpu className="h-4 w-4" />,
     color: "bg-green-500",
     isLocal: true,
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    description: "Local models via Ollama",
+    icon: <Cpu className="h-4 w-4" />,
+    color: "bg-teal-500",
+    isLocal: true,
+    // Note: No apiKeyField - Ollama doesn't require auth
   },
   {
     id: "openai",
@@ -779,10 +788,13 @@ function SettingsContent() {
               <Card className="glass-strong">
                 <div className="p-6 space-y-4">
                   <div className="space-y-1">
-                    <h2 className="text-lg font-semibold">Custom Instructions</h2>
+                    <h2 className="text-lg font-semibold">
+                      Custom Instructions
+                    </h2>
                     <p className="text-sm text-muted-foreground">
-                      Add custom instructions that will be included at the beginning of every conversation.
-                      Leave empty for no custom instructions.
+                      Add custom instructions that will be included at the
+                      beginning of every conversation. Leave empty for no custom
+                      instructions.
                     </p>
                   </div>
                   <textarea
@@ -792,8 +804,9 @@ function SettingsContent() {
                     className="w-full min-h-[120px] p-3 text-sm rounded-md border border-border bg-background/50 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
                   />
                   <p className="text-xs text-muted-foreground">
-                    These instructions help personalize AI responses to your preferences.
-                    The AI will still have access to its core capabilities like the Loom editor.
+                    These instructions help personalize AI responses to your
+                    preferences. The AI will still have access to its core
+                    capabilities like the Loom editor.
                   </p>
                 </div>
               </Card>
@@ -1006,11 +1019,15 @@ function SettingsContent() {
                   <div className="space-y-3">
                     {PROVIDERS.filter(
                       (p) =>
-                        p.apiKeyField &&
-                        !p.isLocal &&
-                        !p.requiresCustomEndpoint,
+                        // Include providers with API keys OR Ollama (which doesn't need an API key)
+                        (p.apiKeyField || p.id === "ollama") &&
+                        !p.requiresCustomEndpoint &&
+                        p.id !== "atom", // Exclude llama.cpp (auto-detected)
                     ).map((provider) => {
-                      const isConfigured = hasApiKeyConfigured(provider.id);
+                      // Ollama is always "configured" since it doesn't need an API key
+                      const isConfigured =
+                        provider.id === "ollama" ||
+                        hasApiKeyConfigured(provider.id);
                       const isExpanded = expandedProviders.has(provider.id);
                       const models = availableModels[provider.id] || [];
                       const filteredModels = filterModels(models, provider.id);
