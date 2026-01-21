@@ -22,6 +22,7 @@ import {
   Minus,
   MoreHorizontal,
   GripHorizontal,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -313,8 +314,8 @@ function PendingEditCard({
   }, [edit.originalContent, edit.newContent]);
 
   // Flatten all diff lines for building final content
-  const allDiffLines = useMemo(() => {
-    return hunks.flatMap((hunk) => hunk.lines);
+  const allDiffLines = useMemo((): DiffLine[] => {
+    return hunks.flatMap((hunk) => hunk.lines as DiffLine[]);
   }, [hunks]);
 
   // Check if this is a large edit
@@ -350,6 +351,18 @@ function PendingEditCard({
     },
     [],
   );
+
+  const handleResetLine = useCallback((lineIndex: number) => {
+    setLineDecisions((prev) => {
+      const next = new Map(prev);
+      next.delete(lineIndex);
+      // If no more decisions, exit line-by-line mode
+      if (next.size === 0) {
+        setLineByLineMode(false);
+      }
+      return next;
+    });
+  }, []);
 
   // Build final content from line decisions
   const buildFinalContent = useCallback((): string => {
@@ -603,6 +616,7 @@ function PendingEditCard({
                     onAcceptLine: handleAcceptLine,
                     onRejectLine: handleRejectLine,
                     onEditLine: handleEditLine,
+                    onResetLine: handleResetLine,
                   }}
                   enableLineActions={true}
                 />
@@ -656,6 +670,7 @@ interface LineActionCallbacks {
   onAcceptLine: (lineIndex: number) => void;
   onRejectLine: (lineIndex: number) => void;
   onEditLine: (lineIndex: number, newContent: string) => void;
+  onResetLine: (lineIndex: number) => void;
 }
 
 // Extended diff line with index for tracking
@@ -739,6 +754,7 @@ function HunkDiffView({
                       onAccept={lineActions?.onAcceptLine}
                       onReject={lineActions?.onRejectLine}
                       onEdit={lineActions?.onEditLine}
+                      onReset={lineActions?.onResetLine}
                     />
                   );
                 })}
@@ -760,6 +776,7 @@ interface DiffLineRowProps {
   onAccept?: (lineIndex: number) => void;
   onReject?: (lineIndex: number) => void;
   onEdit?: (lineIndex: number, newContent: string) => void;
+  onReset?: (lineIndex: number) => void;
 }
 
 function DiffLineRow({
@@ -771,6 +788,7 @@ function DiffLineRow({
   onAccept,
   onReject,
   onEdit,
+  onReset,
 }: DiffLineRowProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -843,6 +861,11 @@ function DiffLineRow({
     setIsEditing(false);
   };
 
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onReset?.(globalIndex);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -856,9 +879,9 @@ function DiffLineRow({
     <tr
       className={cn(
         "border-b border-border/20 last:border-b-0 group transition-colors",
-        colors.bg,
+        // Yellow highlight on hover for actionable lines, otherwise use decision/type-based colors
+        isHovered && enableActions ? "bg-yellow-500/15" : colors.bg,
         colors.border,
-        enableActions && !decision && "hover:bg-muted/30",
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -931,16 +954,27 @@ function DiffLineRow({
             </div>
           )}
           {decision && (
-            <span
-              className={cn(
-                "text-[10px] uppercase font-medium",
-                decision === "accepted" && "text-green-500",
-                decision === "rejected" && "text-red-500/50",
-                decision === "edited" && "text-blue-500",
+            <div className="flex items-center gap-1">
+              <span
+                className={cn(
+                  "text-[10px] uppercase font-medium",
+                  decision === "accepted" && "text-green-500",
+                  decision === "rejected" && "text-red-500/50",
+                  decision === "edited" && "text-blue-500",
+                )}
+              >
+                {decision}
+              </span>
+              {isHovered && (
+                <button
+                  onClick={handleReset}
+                  className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Undo - reset to pending"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </button>
               )}
-            >
-              {decision}
-            </span>
+            </div>
           )}
         </td>
       )}
