@@ -1,6 +1,21 @@
-<p align="center">
-  <img src="docs/continuum-logo.png" alt="Continuum" width="140" />
-</p>
+---
+
+<div align="center">
+
+![vanta_trimmed](https://cdn-uploads.huggingface.co/production/uploads/686c460ba3fc457ad14ab6f8/hcGtMtCIizEZG_OuCvfac.png)
+  
+  <h1>VANTA Research</h1>
+    
+  <p><strong>Independent AI safety research lab specializing in cognitive fit, alignment, and human-AI collaboration</strong></p>
+  
+  <p>
+    <a href="https://unmodeledtyler.com"><img src="https://img.shields.io/badge/Website-unmodeledtyler.com-yellow" alt="Website"/></a>
+    <a href="https://x.com/vanta_research"><img src="https://img.shields.io/badge/@vanta_research-1DA1F2?logo=x" alt="X"/></a>
+    <a href="https://github.com/vanta-research"><img src="https://img.shields.io/badge/GitHub-vanta--research-181717?logo=github" alt="GitHub"/></a>
+  </p>
+</div>
+
+---
 
 <h1 align="center">Continuum</h1>
 
