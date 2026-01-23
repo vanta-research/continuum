@@ -426,6 +426,11 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
 
+  // New folder dialog state
+  const [newFolderParentPath, setNewFolderParentPath] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
+
   const isOpen = loom.state.fileSidebarOpen;
   const projectId = projectState.activeProjectId;
 
@@ -543,15 +548,21 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
     }
   };
 
-  const handleCreateFolder = async (parentPath: string = "") => {
-    const name = prompt("Folder name:");
-    if (!name || !projectId) return;
+  const handleCreateFolder = (parentPath: string = "") => {
+    setNewFolderParentPath(parentPath);
+    setNewFolderName("");
+    // Focus input after state update
+    setTimeout(() => newFolderInputRef.current?.focus(), 0);
+  };
+
+  const handleCreateFolderSubmit = async () => {
+    if (!newFolderName.trim() || !projectId || newFolderParentPath === null) return;
 
     try {
       const response = await fetch(`/api/projects/${projectId}/folders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, parentPath }),
+        body: JSON.stringify({ name: newFolderName.trim(), parentPath: newFolderParentPath }),
       });
       if (response.ok) {
         const data = await response.json();
@@ -560,7 +571,15 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
       }
     } catch (error) {
       console.error("Failed to create folder:", error);
+    } finally {
+      setNewFolderParentPath(null);
+      setNewFolderName("");
     }
+  };
+
+  const handleCreateFolderCancel = () => {
+    setNewFolderParentPath(null);
+    setNewFolderName("");
   };
 
   const handleUploadClick = (folderPath: string = "") => {
@@ -822,6 +841,53 @@ export function FileTreeSidebar({ className = "" }: FileTreeSidebarProps) {
           accept=".txt,.md,.pdf,image/*"
         />
       </div>
+
+      {/* New Folder Dialog */}
+      {newFolderParentPath !== null &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+            <div className="bg-zinc-900 border border-white/10 rounded-lg shadow-xl p-4 w-72">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium">New Folder</h3>
+                <button
+                  onClick={handleCreateFolderCancel}
+                  className="p-1 hover:bg-white/10 rounded transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <input
+                ref={newFolderInputRef}
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateFolderSubmit();
+                  if (e.key === "Escape") handleCreateFolderCancel();
+                }}
+                placeholder="Folder name"
+                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-white/10 rounded focus:outline-none focus:border-primary"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2 mt-3">
+                <button
+                  onClick={handleCreateFolderCancel}
+                  className="px-3 py-1.5 text-xs hover:bg-white/10 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateFolderSubmit}
+                  disabled={!newFolderName.trim()}
+                  className="px-3 py-1.5 text-xs bg-primary hover:bg-primary/90 rounded transition-colors disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
