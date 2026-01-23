@@ -63,17 +63,40 @@ class ProjectSystem {
       if (fs.existsSync(this.indexFile)) {
         const data = fs.readFileSync(this.indexFile, "utf-8");
         const parsed = JSON.parse(data);
+        let index: ProjectsIndex;
+
         // Handle legacy format where index.json was just an array
         if (Array.isArray(parsed)) {
-          return { projects: parsed, activeProjectId: undefined };
-        }
-        // Ensure proper structure
-        if (parsed && typeof parsed === "object") {
-          return {
+          index = { projects: parsed, activeProjectId: undefined };
+        } else if (parsed && typeof parsed === "object") {
+          index = {
             projects: Array.isArray(parsed.projects) ? parsed.projects : [],
             activeProjectId: parsed.activeProjectId,
           };
+        } else {
+          return { projects: [], activeProjectId: undefined };
         }
+
+        // Clean up stale project entries that no longer exist on disk
+        const originalCount = index.projects.length;
+        index.projects = index.projects.filter((p) => {
+          const projectFile = this.getProjectFile(p.id);
+          return fs.existsSync(projectFile);
+        });
+
+        // Save cleaned index if we removed any stale entries
+        if (index.projects.length !== originalCount) {
+          // Also clean up activeProjectId if it was removed
+          if (
+            index.activeProjectId &&
+            !index.projects.some((p) => p.id === index.activeProjectId)
+          ) {
+            index.activeProjectId = index.projects[0]?.id;
+          }
+          this.saveIndex(index);
+        }
+
+        return index;
       }
     } catch (error) {
       console.error("Error loading projects index:", error);
@@ -244,6 +267,7 @@ class ProjectSystem {
 
   /**
    * Get/set active project
+   * Note: loadIndex() already cleans up stale references
    */
   getActiveProjectId(): string | undefined {
     return this.loadIndex().activeProjectId;
