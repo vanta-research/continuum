@@ -168,6 +168,7 @@ The architecture is built to support both. You decide where your data goes.
 git clone https://github.com/vanta-research/continuum.git
 cd continuum
 npm install
+npm install next
 npm run dev
 ```
 
